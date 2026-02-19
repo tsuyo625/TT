@@ -155,16 +155,17 @@ export class GameScene {
     // Player movement
     this.player.update(dt);
 
-    // Camera orbits player based on drag yaw
+    // Camera orbits player based on drag yaw/pitch
     const px = this.player.mesh.position.x;
     const pz = this.player.mesh.position.z;
     const yaw = this.input.cameraYaw;
-    const camDist = 10;
-    const camHeight = 12;
+    const pitch = this.input.cameraPitch;
+    const orbitDist = 15.6;
+    const hDist = Math.cos(pitch) * orbitDist;
     this.engine.camera.position.set(
-      px + Math.sin(yaw) * camDist,
-      camHeight,
-      pz + Math.cos(yaw) * camDist,
+      px + Math.sin(yaw) * hDist,
+      Math.sin(pitch) * orbitDist,
+      pz + Math.cos(yaw) * hDist,
     );
     this.engine.camera.lookAt(px, 0, pz);
 

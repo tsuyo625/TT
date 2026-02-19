@@ -27,8 +27,12 @@ export class InputManager {
   // Camera touch tracking
   private cameraTouchId: number | null = null;
   private cameraPrevX = 0;
+  private cameraPrevY = 0;
   private cameraWasDrag = false;
   private _cameraYaw = 0;
+  private _cameraPitch = 0.876; // default angle ≈ atan2(12,10)
+  private readonly PITCH_MIN = 0.2;
+  private readonly PITCH_MAX = 1.4;
 
   // Virtual joystick visuals
   private joystickBase: HTMLDivElement;
@@ -48,6 +52,10 @@ export class InputManager {
 
   get cameraYaw(): number {
     return this._cameraYaw;
+  }
+
+  get cameraPitch(): number {
+    return this._cameraPitch;
   }
 
   constructor(element: HTMLElement, maxRadius = 80) {
@@ -93,6 +101,7 @@ export class InputManager {
       } else if (this.cameraTouchId === null) {
         this.cameraTouchId = t.identifier;
         this.cameraPrevX = t.clientX;
+        this.cameraPrevY = t.clientY;
         this.cameraWasDrag = false;
       }
     }
@@ -105,7 +114,7 @@ export class InputManager {
       if (t.identifier === this.joystickTouchId) {
         this.moveJoystick(t.clientX, t.clientY);
       } else if (t.identifier === this.cameraTouchId) {
-        this.moveCamera(t.clientX);
+        this.moveCamera(t.clientX, t.clientY);
       }
     }
   };
@@ -166,11 +175,17 @@ export class InputManager {
 
   // ── Camera ──
 
-  private moveCamera(x: number): void {
+  private moveCamera(x: number, y: number): void {
     const dx = x - this.cameraPrevX;
-    if (Math.abs(dx) > 2) this.cameraWasDrag = true;
+    const dy = y - this.cameraPrevY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this.cameraWasDrag = true;
     this._cameraYaw += dx * 0.005;
+    this._cameraPitch = Math.max(
+      this.PITCH_MIN,
+      Math.min(this.PITCH_MAX, this._cameraPitch - dy * 0.004),
+    );
     this.cameraPrevX = x;
+    this.cameraPrevY = y;
   }
 
   // ── Mouse fallback ──
@@ -184,6 +199,7 @@ export class InputManager {
     } else {
       this.mouseDragType = "camera";
       this.cameraPrevX = e.clientX;
+      this.cameraPrevY = e.clientY;
       this.cameraWasDrag = false;
     }
   };
@@ -192,7 +208,7 @@ export class InputManager {
     if (this.mouseDragType === "joystick") {
       this.moveJoystick(e.clientX, e.clientY);
     } else if (this.mouseDragType === "camera") {
-      this.moveCamera(e.clientX);
+      this.moveCamera(e.clientX, e.clientY);
     }
   };
 

@@ -111,10 +111,17 @@ export class OfflineGameScene {
     // Player movement
     this.player.update(dt);
 
-    // Camera follows player
+    // Camera orbits player based on drag yaw
     const px = this.player.mesh.position.x;
     const pz = this.player.mesh.position.z;
-    this.engine.camera.position.set(px, 12, pz + 10);
+    const yaw = this.input.cameraYaw;
+    const camDist = 10;
+    const camHeight = 12;
+    this.engine.camera.position.set(
+      px + Math.sin(yaw) * camDist,
+      camHeight,
+      pz + Math.cos(yaw) * camDist,
+    );
     this.engine.camera.lookAt(px, 0, pz);
 
     // Can sync

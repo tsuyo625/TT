@@ -38,10 +38,15 @@ export class Player {
 
     const drag = this.input.drag;
     if (drag.active && drag.magnitude > 0.05) {
-      // Convert screen drag to world movement
-      // Screen X → World X, Screen Y → World -Z (forward)
-      const vx = drag.direction.x * drag.magnitude * this.moveSpeed;
-      const vz = drag.direction.y * drag.magnitude * this.moveSpeed;
+      // Convert screen drag to world movement, rotated by camera yaw
+      const rawVx = drag.direction.x * drag.magnitude * this.moveSpeed;
+      const rawVz = drag.direction.y * drag.magnitude * this.moveSpeed;
+
+      const yaw = this.input.cameraYaw;
+      const cosY = Math.cos(yaw);
+      const sinY = Math.sin(yaw);
+      const vx = rawVx * cosY + rawVz * sinY;
+      const vz = -rawVx * sinY + rawVz * cosY;
 
       this.body.velocity.x = vx;
       this.body.velocity.z = vz;

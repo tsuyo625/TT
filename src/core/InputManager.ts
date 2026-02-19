@@ -10,8 +10,6 @@ export interface DragState {
 }
 
 export class InputManager {
-  private dragStart = new THREE.Vector2();
-  private dragCurrent = new THREE.Vector2();
   private _drag: DragState = {
     direction: new THREE.Vector2(),
     magnitude: 0,
@@ -19,25 +17,46 @@ export class InputManager {
   };
   private readonly maxRadius: number;
 
-  /** Callback fired on single-tap (not drag) */
+  /** Callback fired on single-tap (not drag) on the camera zone */
   onTap: ((screenPos: THREE.Vector2) => void) | null = null;
-  private wasDrag = false;
+
+  // Joystick touch tracking
+  private joystickTouchId: number | null = null;
+  private joystickStart = new THREE.Vector2();
+
+  // Camera touch tracking
+  private cameraTouchId: number | null = null;
+  private cameraPrevX = 0;
+  private cameraWasDrag = false;
+  private _cameraYaw = 0;
 
   // Virtual joystick visuals
   private joystickBase: HTMLDivElement;
   private joystickKnob: HTMLDivElement;
 
+  // Joystick zone: bottom-left region of the screen
+  private readonly ZONE_W_RATIO = 0.35;
+  private readonly ZONE_H_RATIO = 0.40;
+
+  // Fixed joystick center position
+  private readonly JOY_LEFT = 75;
+  private readonly JOY_BOTTOM = 90;
+
   get drag(): Readonly<DragState> {
     return this._drag;
+  }
+
+  get cameraYaw(): number {
+    return this._cameraYaw;
   }
 
   constructor(element: HTMLElement, maxRadius = 80) {
     this.maxRadius = maxRadius;
 
-    // Create joystick UI
+    // Create joystick UI - always visible at bottom-left
     this.joystickBase = document.createElement("div");
     this.joystickBase.style.cssText =
-      "position:fixed;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);pointer-events:none;z-index:20;display:none;transform:translate(-50%,-50%);";
+      `position:fixed;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);pointer-events:none;z-index:20;left:${this.JOY_LEFT}px;bottom:${this.JOY_BOTTOM}px;transform:translate(-50%,50%);`;
     this.joystickKnob = document.createElement("div");
     this.joystickKnob.style.cssText =
       "position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.35);left:50%;top:50%;transform:translate(-50%,-50%);transition:background 0.1s;";
@@ -47,6 +66,7 @@ export class InputManager {
     element.addEventListener("touchstart", this.onTouchStart, { passive: false });
     element.addEventListener("touchmove", this.onTouchMove, { passive: false });
     element.addEventListener("touchend", this.onTouchEnd, { passive: false });
+    element.addEventListener("touchcancel", this.onTouchEnd, { passive: false });
 
     // Mouse fallback for browser testing
     element.addEventListener("mousedown", this.onMouseDown);
@@ -54,57 +74,72 @@ export class InputManager {
     element.addEventListener("mouseup", this.onMouseUp);
   }
 
+  private isInJoystickZone(x: number, y: number): boolean {
+    return (
+      x < window.innerWidth * this.ZONE_W_RATIO &&
+      y > window.innerHeight * (1 - this.ZONE_H_RATIO)
+    );
+  }
+
+  // ── Touch events (multi-touch) ──
+
   private onTouchStart = (e: TouchEvent) => {
     e.preventDefault();
-    const t = e.touches[0];
-    this.startDrag(t.clientX, t.clientY);
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (this.isInJoystickZone(t.clientX, t.clientY) && this.joystickTouchId === null) {
+        this.joystickTouchId = t.identifier;
+        this.startJoystick(t.clientX, t.clientY);
+      } else if (this.cameraTouchId === null) {
+        this.cameraTouchId = t.identifier;
+        this.cameraPrevX = t.clientX;
+        this.cameraWasDrag = false;
+      }
+    }
   };
 
   private onTouchMove = (e: TouchEvent) => {
     e.preventDefault();
-    const t = e.touches[0];
-    this.moveDrag(t.clientX, t.clientY);
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === this.joystickTouchId) {
+        this.moveJoystick(t.clientX, t.clientY);
+      } else if (t.identifier === this.cameraTouchId) {
+        this.moveCamera(t.clientX);
+      }
+    }
   };
 
   private onTouchEnd = (e: TouchEvent) => {
     e.preventDefault();
-    this.endDrag();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === this.joystickTouchId) {
+        this.endJoystick();
+        this.joystickTouchId = null;
+      } else if (t.identifier === this.cameraTouchId) {
+        if (!this.cameraWasDrag && this.onTap) {
+          this.onTap(new THREE.Vector2(t.clientX, t.clientY));
+        }
+        this.cameraTouchId = null;
+      }
+    }
   };
 
-  private onMouseDown = (e: MouseEvent) => {
-    this.startDrag(e.clientX, e.clientY);
-  };
+  // ── Joystick ──
 
-  private onMouseMove = (e: MouseEvent) => {
-    if (this._drag.active) this.moveDrag(e.clientX, e.clientY);
-  };
-
-  private onMouseUp = () => {
-    this.endDrag();
-  };
-
-  private startDrag(x: number, y: number): void {
-    this.dragStart.set(x, y);
-    this.dragCurrent.set(x, y);
+  private startJoystick(x: number, y: number): void {
+    this.joystickStart.set(x, y);
     this._drag.active = true;
     this._drag.magnitude = 0;
     this._drag.direction.set(0, 0);
-    this.wasDrag = false;
-
-    // Show joystick at touch point
-    this.joystickBase.style.left = x + "px";
-    this.joystickBase.style.top = y + "px";
-    this.joystickBase.style.display = "block";
     this.joystickKnob.style.transform = "translate(-50%,-50%)";
   }
 
-  private moveDrag(x: number, y: number): void {
-    this.dragCurrent.set(x, y);
-    const dx = this.dragCurrent.x - this.dragStart.x;
-    const dy = this.dragCurrent.y - this.dragStart.y;
+  private moveJoystick(x: number, y: number): void {
+    const dx = x - this.joystickStart.x;
+    const dy = y - this.joystickStart.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > 5) this.wasDrag = true;
 
     const clamped = Math.min(dist, this.maxRadius);
     this._drag.magnitude = clamped / this.maxRadius; // 0-1
@@ -121,15 +156,54 @@ export class InputManager {
       this._drag.magnitude > 0.7 ? "rgba(231,76,60,0.5)" : "rgba(255,255,255,0.35)";
   }
 
-  private endDrag(): void {
-    if (!this.wasDrag && this.onTap) {
-      this.onTap(this.dragStart.clone());
-    }
+  private endJoystick(): void {
     this._drag.active = false;
     this._drag.magnitude = 0;
     this._drag.direction.set(0, 0);
-
-    // Hide joystick
-    this.joystickBase.style.display = "none";
+    this.joystickKnob.style.transform = "translate(-50%,-50%)";
+    this.joystickKnob.style.background = "rgba(255,255,255,0.35)";
   }
+
+  // ── Camera ──
+
+  private moveCamera(x: number): void {
+    const dx = x - this.cameraPrevX;
+    if (Math.abs(dx) > 2) this.cameraWasDrag = true;
+    this._cameraYaw += dx * 0.005;
+    this.cameraPrevX = x;
+  }
+
+  // ── Mouse fallback ──
+
+  private mouseDragType: "joystick" | "camera" | null = null;
+
+  private onMouseDown = (e: MouseEvent) => {
+    if (this.isInJoystickZone(e.clientX, e.clientY)) {
+      this.mouseDragType = "joystick";
+      this.startJoystick(e.clientX, e.clientY);
+    } else {
+      this.mouseDragType = "camera";
+      this.cameraPrevX = e.clientX;
+      this.cameraWasDrag = false;
+    }
+  };
+
+  private onMouseMove = (e: MouseEvent) => {
+    if (this.mouseDragType === "joystick") {
+      this.moveJoystick(e.clientX, e.clientY);
+    } else if (this.mouseDragType === "camera") {
+      this.moveCamera(e.clientX);
+    }
+  };
+
+  private onMouseUp = (e: MouseEvent) => {
+    if (this.mouseDragType === "joystick") {
+      this.endJoystick();
+    } else if (this.mouseDragType === "camera") {
+      if (!this.cameraWasDrag && this.onTap) {
+        this.onTap(new THREE.Vector2(e.clientX, e.clientY));
+      }
+    }
+    this.mouseDragType = null;
+  };
 }

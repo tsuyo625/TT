@@ -7,6 +7,8 @@ import { LobbyScene } from "./scenes/LobbyScene";
 import { GameScene } from "./scenes/GameScene";
 import { OfflineGameScene } from "./scenes/OfflineGameScene";
 
+console.info("main.ts: modules loaded");
+
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "ws://localhost:2567";
 
 function showTitle() {
@@ -67,4 +69,6 @@ function startOnlineGame(network: NetworkManager, playerIndex: number) {
   network.sendReady();
 }
 
+console.info("main.ts: calling showTitle()");
 showTitle();
+console.info("main.ts: showTitle() done");

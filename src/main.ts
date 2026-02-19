@@ -5,16 +5,36 @@ import { NetworkManager } from "./network/NetworkManager";
 import { TitleScene } from "./scenes/TitleScene";
 import { LobbyScene } from "./scenes/LobbyScene";
 import { GameScene } from "./scenes/GameScene";
+import { OfflineGameScene } from "./scenes/OfflineGameScene";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "ws://localhost:2567";
 
-async function main() {
+function showTitle() {
   const title = new TitleScene();
 
-  title.onStart = () => {
+  title.onOffline = () => {
+    title.dispose();
+    startOfflineGame();
+  };
+
+  title.onOnline = () => {
     title.dispose();
     showLobby();
   };
+}
+
+function startOfflineGame() {
+  const engine = new Engine(document.body);
+  const input = new InputManager(engine.renderer.domElement);
+  const hud = new HUD();
+
+  const scene = new OfflineGameScene(engine, input, hud, () => {
+    engine.dispose();
+    hud.dispose();
+    showTitle();
+  });
+  scene.init();
+  engine.start();
 }
 
 function showLobby() {
@@ -27,15 +47,15 @@ function showLobby() {
     try {
       const playerIndex = await network.joinOrCreate(name);
       lobby.dispose();
-      startGame(network, playerIndex);
+      startOnlineGame(network, playerIndex);
     } catch (err) {
       console.error("Connection failed:", err);
-      lobby.setStatus("接続失敗。リトライしてください。");
+      lobby.setStatus("接続失敗。サーバーが起動していない可能性があります。");
     }
   };
 }
 
-function startGame(network: NetworkManager, playerIndex: number) {
+function startOnlineGame(network: NetworkManager, playerIndex: number) {
   const engine = new Engine(document.body);
   const input = new InputManager(engine.renderer.domElement);
   const hud = new HUD();
@@ -44,8 +64,7 @@ function startGame(network: NetworkManager, playerIndex: number) {
   scene.init();
   engine.start();
 
-  // Tell server we're ready
   network.sendReady();
 }
 
-main();
+showTitle();

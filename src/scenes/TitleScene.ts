@@ -1,6 +1,7 @@
 export class TitleScene {
   private container: HTMLDivElement;
-  onStart: (() => void) | null = null;
+  onOffline: (() => void) | null = null;
+  onOnline: (() => void) | null = null;
 
   constructor() {
     this.container = document.createElement("div");
@@ -35,14 +36,25 @@ export class TitleScene {
         .title-sub {
           font-size: 16px; color: #a0a0c0; margin-bottom: 40px;
         }
-        .title-start {
-          background: #e74c3c; color: #fff; border: none;
-          padding: 16px 48px; border-radius: 30px; font-size: 20px;
-          font-weight: bold; cursor: pointer;
+        .title-buttons {
+          display: flex; flex-direction: column; gap: 14px; align-items: center;
+        }
+        .title-btn {
+          color: #fff; border: none;
+          padding: 16px 48px; border-radius: 30px; font-size: 18px;
+          font-weight: bold; cursor: pointer; min-width: 220px;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .title-btn:active { transform: scale(0.95); }
+        .btn-offline {
+          background: #e74c3c;
           box-shadow: 0 4px 20px rgba(231, 76, 60, 0.4);
           animation: pulse 2s ease-in-out infinite;
         }
-        .title-start:active { transform: scale(0.95); }
+        .btn-online {
+          background: #2980b9;
+          box-shadow: 0 4px 20px rgba(41, 128, 185, 0.3);
+        }
         @keyframes pulse {
           0%, 100% { box-shadow: 0 4px 20px rgba(231, 76, 60, 0.4); }
           50% { box-shadow: 0 4px 30px rgba(231, 76, 60, 0.7); }
@@ -55,14 +67,20 @@ export class TitleScene {
         <div class="title-can"></div>
         <div class="title-name">缶けり</div>
         <div class="title-sub">KANKERI ONLINE</div>
-        <button class="title-start">はじめる</button>
+        <div class="title-buttons">
+          <button class="title-btn btn-offline">ひとりで練習</button>
+          <button class="title-btn btn-online">オンライン対戦</button>
+        </div>
         <div class="title-info">Three.js + Colyseus + Capacitor</div>
       </div>
     `;
     document.body.appendChild(this.container);
 
-    this.container.querySelector(".title-start")!.addEventListener("click", () => {
-      this.onStart?.();
+    this.container.querySelector(".btn-offline")!.addEventListener("click", () => {
+      this.onOffline?.();
+    });
+    this.container.querySelector(".btn-online")!.addEventListener("click", () => {
+      this.onOnline?.();
     });
   }
 

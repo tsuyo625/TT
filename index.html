@@ -9,6 +9,82 @@
       body { background: #000; overflow: hidden; }
       canvas { display: block; }
     </style>
+    <!-- Debug console: モジュール読み込み前にエラーをキャッチ -->
+    <script>
+    (function() {
+      var panel = document.createElement('div');
+      panel.id = 'debug-console';
+      panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:35vh;background:rgba(0,0,0,0.92);color:#0f0;font:12px/1.4 monospace;overflow-y:auto;z-index:99999;padding:8px;display:none;border-top:2px solid #0f0;';
+
+      var toggle = document.createElement('div');
+      toggle.id = 'debug-toggle';
+      toggle.textContent = 'DBG';
+      toggle.style.cssText = 'position:fixed;bottom:8px;right:8px;width:44px;height:44px;background:#222;color:#0f0;border:2px solid #0f0;border-radius:50%;z-index:100000;display:flex;align-items:center;justify-content:center;font:bold 11px monospace;cursor:pointer;-webkit-tap-highlight-color:transparent;opacity:0.7;';
+
+      var visible = false;
+      toggle.addEventListener('click', function() {
+        visible = !visible;
+        panel.style.display = visible ? 'block' : 'none';
+        toggle.style.opacity = visible ? '1' : '0.7';
+        if (visible) panel.scrollTop = panel.scrollHeight;
+      });
+
+      var logs = [];
+      function addLog(type, args) {
+        var colors = { log: '#0f0', warn: '#ff0', error: '#f44', info: '#4af' };
+        var time = new Date().toTimeString().slice(0, 8);
+        var msg = Array.prototype.slice.call(args).map(function(a) {
+          if (a instanceof Error) return a.message + '\n' + (a.stack || '');
+          if (typeof a === 'object') try { return JSON.stringify(a, null, 1); } catch(e) { return String(a); }
+          return String(a);
+        }).join(' ');
+        var entry = document.createElement('div');
+        entry.style.cssText = 'color:' + (colors[type] || '#0f0') + ';border-bottom:1px solid #222;padding:3px 0;word-break:break-all;white-space:pre-wrap;';
+        entry.textContent = '[' + time + ' ' + type.toUpperCase() + '] ' + msg;
+        panel.appendChild(entry);
+        if (visible) panel.scrollTop = panel.scrollHeight;
+        // Auto-show on error
+        if (type === 'error' && !visible) {
+          visible = true;
+          panel.style.display = 'block';
+          toggle.style.opacity = '1';
+          panel.scrollTop = panel.scrollHeight;
+        }
+      }
+
+      // Override console methods
+      ['log', 'warn', 'error', 'info'].forEach(function(method) {
+        var orig = console[method];
+        console[method] = function() {
+          orig.apply(console, arguments);
+          addLog(method, arguments);
+        };
+      });
+
+      // Catch uncaught errors
+      window.addEventListener('error', function(e) {
+        addLog('error', ['UNCAUGHT: ' + e.message + ' at ' + e.filename + ':' + e.lineno + ':' + e.colno]);
+      });
+
+      // Catch unhandled promise rejections
+      window.addEventListener('unhandledrejection', function(e) {
+        addLog('error', ['UNHANDLED PROMISE: ' + (e.reason && e.reason.stack || e.reason)]);
+      });
+
+      // Append to DOM as soon as possible
+      if (document.body) {
+        document.body.appendChild(panel);
+        document.body.appendChild(toggle);
+      } else {
+        document.addEventListener('DOMContentLoaded', function() {
+          document.body.appendChild(panel);
+          document.body.appendChild(toggle);
+        });
+      }
+
+      console.info('Debug console ready. Tap DBG button to toggle.');
+    })();
+    </script>
   </head>
   <body>
     <script type="module" src="/src/main.ts"></script>

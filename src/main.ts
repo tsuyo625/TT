@@ -69,6 +69,11 @@ function startOnlineGame(network: NetworkManager, playerIndex: number) {
   network.sendReady();
 }
 
+// Signal to watchdog that the module loaded successfully
+(window as unknown as Record<string, unknown>).__MODULE_LOADED = true;
+
+// Remove loading screen and start the game
+document.getElementById("loading-screen")?.remove();
 console.info("main.ts: calling showTitle()");
 showTitle();
 console.info("main.ts: showTitle() done");

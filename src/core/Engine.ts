@@ -80,7 +80,7 @@ export class Engine {
       // Cap delta to avoid spiral of death
       const cappedDt = Math.min(dt, 1 / 30);
 
-      this.physicsWorld.step(1 / 60, cappedDt, 3);
+      this.physicsWorld.step(1 / 60, cappedDt, 10);
 
       for (const cb of this.updateCallbacks) {
         cb(cappedDt);

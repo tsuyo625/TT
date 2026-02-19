@@ -11,7 +11,7 @@ export class Player {
   role: PlayerRole = "hider";
   captured = false;
 
-  private readonly moveSpeed = 60;
+  private readonly moveSpeed = 30;
   private readonly input: InputManager;
   private targetRotation = 0;
 

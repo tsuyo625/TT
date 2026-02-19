@@ -10,7 +10,7 @@ export class AIPlayer {
   role: PlayerRole;
   captured = false;
 
-  private moveSpeed = 40;
+  private moveSpeed = 20;
   private targetX = 0;
   private targetZ = 0;
   private wanderTimer = 0;
@@ -32,7 +32,7 @@ export class AIPlayer {
     });
 
     if (role === "seeker") {
-      this.moveSpeed = 17.5;
+      this.moveSpeed = 8.75;
     }
   }
 

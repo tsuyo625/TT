@@ -150,14 +150,10 @@ export class OfflineGameScene {
       this.player.body.position.z
     );
     if (distToPlayer < FIND_RANGE && !this.player.captured) {
-      // Seeker needs to go back to can to declare
-      const distToCan = seeker.distanceTo(CAN_POSITION.x, CAN_POSITION.z);
-      if (distToCan < KICK_RANGE) {
-        this.player.captured = true;
-        this.capturedCount++;
-        this.hud.showMessage("見つかった!", 2000);
-        this.checkWinCondition();
-      }
+      this.player.captured = true;
+      this.capturedCount++;
+      this.hud.showMessage("見つかった!", 2000);
+      this.checkWinCondition();
     }
 
     // Check AI hiders

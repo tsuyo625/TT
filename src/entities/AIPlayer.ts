@@ -10,7 +10,7 @@ export class AIPlayer {
   role: PlayerRole;
   captured = false;
 
-  private moveSpeed = 3;
+  private moveSpeed = 8;
   private targetX = 0;
   private targetZ = 0;
   private wanderTimer = 0;

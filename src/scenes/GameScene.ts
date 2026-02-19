@@ -61,6 +61,7 @@ export class GameScene {
 
     // Can
     this.can = new Can(CAN_POSITION.x, CAN_POSITION.z);
+    this.can.setScene(this.engine.scene);
     this.engine.scene.add(this.can.mesh);
     this.engine.physicsWorld.addBody(this.can.body);
 

@@ -264,4 +264,29 @@ export class Player {
   getPosition(): Vector3 {
     return this.mesh.position;
   }
+
+  /** Get full state for network sync */
+  getNetworkState(): {
+    position: { x: number; y: number; z: number };
+    rotationY: number;
+    velocityY: number;
+    stamina: number;
+    staminaState: StaminaState;
+    dashOn: boolean;
+    isMoving: boolean;
+  } {
+    return {
+      position: {
+        x: this.mesh.position.x,
+        y: this.mesh.position.y,
+        z: this.mesh.position.z,
+      },
+      rotationY: this.mesh.rotation.y,
+      velocityY: this.velocityY,
+      stamina: this.stamina,
+      staminaState: this.staminaState,
+      dashOn: this.dashOn,
+      isMoving: this.isMoving,
+    };
+  }
 }

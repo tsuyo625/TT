@@ -6,6 +6,12 @@ import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
 import { OpenWorld, DoorInfo, ElevatorInfo, BuildingBounds } from "../world/OpenWorld";
 import { Animal, AnimalKind } from "../entities/Animal";
+import { GiantCreature } from "../entities/GiantCreature";
+import { NetworkManager } from "../network/NetworkManager";
+import { RemotePlayer } from "../entities/RemotePlayer";
+import { NetworkEvent, RemotePlayerState } from "../network/types";
+import { ChatUI } from "../ui/ChatUI";
+import { JoinDialog } from "../ui/JoinDialog";
 
 const CAMERA_SENSITIVITY = 0.012;
 const FPS_YAW_SENSITIVITY = 0.01;
@@ -21,6 +27,14 @@ export class OpenWorldScene {
   private player!: Player;
   private world!: OpenWorld;
   private animals: Animal[] = [];
+  private giantCreature: GiantCreature | null = null;
+
+  // Multiplayer
+  private networkManager: NetworkManager | null = null;
+  private remotePlayers: Map<string, RemotePlayer> = new Map();
+  private playerNames: Map<string, string> = new Map();
+  private chatUI: ChatUI | null = null;
+  private localPlayerName: string = "Player";
 
   // First-person camera state
   private fpsYaw = 0;
@@ -82,7 +96,146 @@ export class OpenWorldScene {
 
     this.createUI();
 
+    // Initialize network
+    this.initNetwork();
+
     this.engine.onUpdate((dt) => this.update(dt));
+  }
+
+  private getServerUrl(): string {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("server") || "https://openworld-quic.fly.dev:443/game";
+  }
+
+  private async initNetwork(): Promise<void> {
+    // Show join dialog first
+    const joinDialog = new JoinDialog();
+    this.localPlayerName = await joinDialog.show();
+    console.log(`[OpenWorldScene] Player name: ${this.localPlayerName}`);
+
+    const serverUrl = this.getServerUrl();
+    console.log(`[OpenWorldScene] Connecting to ${serverUrl}...`);
+
+    // Certificate hashes for self-signed certs (valid 14 days max for WebTransport)
+    // Regenerate with: openssl x509 -in certs/cert.pem -outform DER | openssl dgst -sha256 -binary | base64
+    const localCertHash = "KaM/L3KMsluA7PVQM/dAhSMO/kK3U4Md2A0lke9FCWg=";
+    const flyioCertHash = "il64cdIVsZkjjWOk9MkhcYz4UmVkR5GN2Da3N7Z0JJs=";
+    const isLocalhost = serverUrl.includes("localhost") || serverUrl.includes("127.0.0.1");
+
+    this.networkManager = new NetworkManager({
+      serverUrl,
+      reconnectAttempts: 5,
+      reconnectDelayMs: 2000,
+      certHash: isLocalhost ? localCertHash : flyioCertHash,
+    });
+
+    this.networkManager.onEvent = (event) => this.handleNetworkEvent(event);
+
+    // Initialize chat UI
+    this.chatUI = new ChatUI();
+    this.chatUI.mount();
+    this.chatUI.setOnSend((message) => {
+      this.networkManager?.sendChat(message);
+    });
+
+    // Connect (async, don't block init)
+    this.networkManager.connect().catch((err) => {
+      console.error("[OpenWorldScene] Initial connection failed:", err);
+      this.chatUI?.addSystemMessage("Connection failed - retrying...");
+    });
+  }
+
+  private handleNetworkEvent(event: NetworkEvent): void {
+    switch (event.type) {
+      case "connected":
+        console.log("[OpenWorldScene] Connected with ID:", event.localPlayerId);
+        this.chatUI?.setLocalPlayerId(event.localPlayerId);
+        this.chatUI?.addSystemMessage(`Connected as ${this.localPlayerName}!`);
+        // Send our name to the server
+        this.networkManager?.setName(this.localPlayerName);
+        // Store our own name
+        this.playerNames.set(event.localPlayerId, this.localPlayerName);
+        break;
+
+      case "disconnected":
+        console.log("[OpenWorldScene] Disconnected:", event.reason);
+        this.chatUI?.addSystemMessage("Disconnected - reconnecting...");
+        break;
+
+      case "player_joined":
+        console.log("[OpenWorldScene] Player joined:", event.playerId);
+        if (event.name) {
+          this.playerNames.set(event.playerId, event.name);
+        }
+        {
+          const name = this.playerNames.get(event.playerId) || event.playerId.slice(0, 8);
+          this.chatUI?.addSystemMessage(`${name} joined`);
+        }
+        break;
+
+      case "player_left":
+        console.log("[OpenWorldScene] Player left:", event.playerId);
+        {
+          const name = this.playerNames.get(event.playerId) || event.playerId.slice(0, 8);
+          this.chatUI?.addSystemMessage(`${name} left`);
+        }
+        this.removeRemotePlayer(event.playerId);
+        this.playerNames.delete(event.playerId);
+        break;
+
+      case "player_name":
+        console.log("[OpenWorldScene] Player name update:", event.playerId, event.name);
+        this.playerNames.set(event.playerId, event.name);
+        // Update remote player's name label if exists
+        this.remotePlayers.get(event.playerId)?.setName(event.name);
+        break;
+
+      case "state_update":
+        this.updateRemotePlayers(event.players);
+        break;
+
+      case "chat":
+        {
+          const name = this.playerNames.get(event.playerId) || event.playerId.slice(0, 8);
+          this.chatUI?.addMessage(name, event.message, event.timestamp);
+        }
+        break;
+    }
+  }
+
+  private updateRemotePlayers(players: Map<string, RemotePlayerState>): void {
+    const localId = this.networkManager?.localPlayerId;
+
+    for (const [playerId, state] of players) {
+      // Skip local player
+      if (playerId === localId) continue;
+
+      let remote = this.remotePlayers.get(playerId);
+
+      if (!remote) {
+        // Create new remote player
+        remote = new RemotePlayer(this.engine.scene, playerId, state);
+        this.remotePlayers.set(playerId, remote);
+
+        // Add shadow casters
+        remote.mesh.getChildMeshes().forEach((m) => {
+          this.engine.shadowGenerator.addShadowCaster(m);
+        });
+
+        console.log(`[OpenWorldScene] Created remote player: ${playerId.slice(0, 8)}`);
+      }
+
+      remote.updateFromServer(state);
+    }
+  }
+
+  private removeRemotePlayer(playerId: string): void {
+    const remote = this.remotePlayers.get(playerId);
+    if (remote) {
+      remote.dispose();
+      this.remotePlayers.delete(playerId);
+      console.log(`[OpenWorldScene] Removed remote player: ${playerId.slice(0, 8)}`);
+    }
   }
 
   private createUI(): void {
@@ -209,6 +362,9 @@ export class OpenWorldScene {
     for (const s of spawns) {
       this.animals.push(new Animal(scene, s.kind, s.x, s.z, sg));
     }
+
+    // Spawn giant titan creature wandering the map
+    this.giantCreature = new GiantCreature(scene, -80, -80, sg);
   }
 
   /* ---- View toggle / camera transition ---- */
@@ -260,11 +416,22 @@ export class OpenWorldScene {
     // Poll keyboard → synthesize drag from WASD
     this.input.tick();
 
-    // Keyboard shortcuts
-    if (this.input.consumeJump()) this.player.jump();
-    if (this.input.consumeDashToggle()) this.toggleDash();
-    if (this.input.consumeInteract()) this.tryInteract();
-    if (this.input.consumeViewToggle()) this.toggleView();
+    // Skip game input if chat is focused
+    const chatFocused = this.chatUI?.isInputFocused() ?? false;
+
+    // Keyboard shortcuts (only if chat not focused)
+    if (!chatFocused) {
+      if (this.input.consumeJump()) this.player.jump();
+      if (this.input.consumeDashToggle()) this.toggleDash();
+      if (this.input.consumeInteract()) this.tryInteract();
+      if (this.input.consumeViewToggle()) this.toggleView();
+    } else {
+      // Clear any pending inputs when chat is focused
+      this.input.consumeJump();
+      this.input.consumeDashToggle();
+      this.input.consumeInteract();
+      this.input.consumeViewToggle();
+    }
 
     // Hide/show mobile UI on pointer lock change
     if (this.input.isPointerLocked !== this.wasPointerLocked) {
@@ -280,6 +447,7 @@ export class OpenWorldScene {
     this.animateDoors(dt);
     this.animateElevators(dt);
     for (const a of this.animals) a.update(dt);
+    this.giantCreature?.update(dt);
 
     // Player movement (pass camera alpha for third-person input rotation)
     this.player.update(dt, this.engine.viewMode, this.fpsYaw, this.engine.thirdPersonCam.alpha);
@@ -295,6 +463,9 @@ export class OpenWorldScene {
 
     // Update stamina gauge
     this.updateStaminaGauge();
+
+    // Network: send position and update remote players
+    this.updateNetwork(dt);
 
     if (this.isTransitioning) {
       this.updateTransition(dt, pos);
@@ -578,5 +749,32 @@ export class OpenWorldScene {
       pos.y + 1.4 + lookY,
       pos.z + lookZ
     ));
+  }
+
+  /* ---- Network ---- */
+
+  private updateNetwork(dt: number): void {
+    if (!this.networkManager?.isConnected) return;
+
+    // Send local player position
+    const pos = this.player.getPosition();
+    this.networkManager.sendPosition(
+      pos.x,
+      pos.y,
+      pos.z,
+      this.player.mesh.rotation.y
+    );
+
+    // Update remote players
+    for (const [playerId, remote] of this.remotePlayers) {
+      remote.update(dt);
+
+      // Remove stale players
+      if (remote.isStale()) {
+        remote.dispose();
+        this.remotePlayers.delete(playerId);
+        console.log(`[OpenWorldScene] Removed stale player: ${playerId.slice(0, 8)}`);
+      }
+    }
   }
 }

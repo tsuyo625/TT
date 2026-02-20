@@ -15,8 +15,13 @@ function mat(scene: Scene, r: number, g: number, b: number): StandardMaterial {
 }
 
 export class AssetFactory {
-  /** Box-style humanoid character */
-  static createCharacter(scene: Scene, color: Color3): TransformNode {
+  /** Box-style humanoid character with joint pivots for animation */
+  static createCharacter(scene: Scene, color: Color3): {
+    root: TransformNode;
+    leftShoulder: TransformNode; rightShoulder: TransformNode;
+    leftHip: TransformNode; rightHip: TransformNode;
+    headNode: TransformNode;
+  } {
     const root = new TransformNode("character", scene);
 
     const bodyMat = mat(scene, color.r, color.g, color.b);
@@ -28,40 +33,65 @@ export class AssetFactory {
     body.position.y = 0.75;
     body.parent = root;
 
+    // Head on a pivot for bobbing
+    const headNode = new TransformNode("headJoint", scene);
+    headNode.position.set(0, 1.3, 0);
+    headNode.parent = root;
+
     const head = CreateBox("head", { width: 0.35, height: 0.35, depth: 0.35 }, scene);
     head.material = skinMat;
-    head.position.y = 1.3;
-    head.parent = root;
+    head.position.set(0, 0, 0);
+    head.parent = headNode;
 
     const eyeMat = mat(scene, 0.13, 0.13, 0.13);
     const leftEye = CreateSphere("leye", { diameter: 0.08, segments: 8 }, scene);
     leftEye.material = eyeMat;
-    leftEye.position.set(-0.08, 1.35, 0.18);
-    leftEye.parent = root;
+    leftEye.position.set(-0.08, 0.05, 0.18);
+    leftEye.parent = headNode;
     const rightEye = CreateSphere("reye", { diameter: 0.08, segments: 8 }, scene);
     rightEye.material = eyeMat;
-    rightEye.position.set(0.08, 1.35, 0.18);
-    rightEye.parent = root;
+    rightEye.position.set(0.08, 0.05, 0.18);
+    rightEye.parent = headNode;
 
-    const leftLeg = CreateBox("lleg", { width: 0.15, height: 0.4, depth: 0.2 }, scene);
-    leftLeg.material = legMat;
-    leftLeg.position.set(-0.13, 0.2, 0);
-    leftLeg.parent = root;
-    const rightLeg = CreateBox("rleg", { width: 0.15, height: 0.4, depth: 0.2 }, scene);
-    rightLeg.material = legMat;
-    rightLeg.position.set(0.13, 0.2, 0);
-    rightLeg.parent = root;
+    // Shoulder joints (pivot at top of torso)
+    const leftShoulder = new TransformNode("lShoulderJoint", scene);
+    leftShoulder.position.set(-0.31, 1.0, 0);
+    leftShoulder.parent = root;
 
     const leftArm = CreateBox("larm", { width: 0.12, height: 0.5, depth: 0.15 }, scene);
     leftArm.material = bodyMat;
-    leftArm.position.set(-0.37, 0.75, 0);
-    leftArm.parent = root;
+    leftArm.position.set(-0.06, -0.25, 0); // offset down from joint
+    leftArm.parent = leftShoulder;
+
+    const rightShoulder = new TransformNode("rShoulderJoint", scene);
+    rightShoulder.position.set(0.31, 1.0, 0);
+    rightShoulder.parent = root;
+
     const rightArm = CreateBox("rarm", { width: 0.12, height: 0.5, depth: 0.15 }, scene);
     rightArm.material = bodyMat;
-    rightArm.position.set(0.37, 0.75, 0);
-    rightArm.parent = root;
+    rightArm.position.set(0.06, -0.25, 0);
+    rightArm.parent = rightShoulder;
 
-    return root;
+    // Hip joints (pivot at bottom of torso)
+    const leftHip = new TransformNode("lHipJoint", scene);
+    leftHip.position.set(-0.13, 0.4, 0);
+    leftHip.parent = root;
+
+    const leftLeg = CreateBox("lleg", { width: 0.15, height: 0.4, depth: 0.2 }, scene);
+    leftLeg.material = legMat;
+    leftLeg.position.set(0, -0.2, 0); // offset down from joint
+    leftLeg.parent = leftHip;
+
+    const rightHip = new TransformNode("rHipJoint", scene);
+    rightHip.position.set(0.13, 0.4, 0);
+    rightHip.parent = root;
+
+    const rightLeg = CreateBox("rleg", { width: 0.15, height: 0.4, depth: 0.2 }, scene);
+    rightLeg.material = legMat;
+    rightLeg.position.set(0, -0.2, 0);
+    rightLeg.parent = rightHip;
+
+    return { root, leftShoulder, rightShoulder, leftHip, rightHip, headNode };
   }
 
   /** Hollow house with interior – returns door pivot for interaction */

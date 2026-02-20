@@ -8,12 +8,27 @@ import { AssetFactory } from "../core/AssetFactory";
 import { InputManager } from "../core/InputManager";
 import type { ViewMode } from "../core/Engine";
 
+const WALK_ANIM_SPEED = 10;   // radians per second for limb swing
+const ARM_SWING = 0.6;         // max rotation (radians) for arms
+const LEG_SWING = 0.5;         // max rotation (radians) for legs
+const HEAD_BOB_AMOUNT = 0.03;  // vertical head bob
+const ANIM_RETURN_SPEED = 8;   // how fast limbs return to rest
+
 export class Player {
   readonly mesh: TransformNode;
   private readonly collider: Mesh;
   private readonly moveSpeed = 10;
   private readonly input: InputManager;
   private targetRotation = 0;
+
+  // Joint references for animation
+  private leftShoulder: TransformNode;
+  private rightShoulder: TransformNode;
+  private leftHip: TransformNode;
+  private rightHip: TransformNode;
+  private headNode: TransformNode;
+  private walkPhase = 0;
+  private isMoving = false;
 
   // Jump / gravity
   private velocityY = 0;
@@ -23,7 +38,13 @@ export class Player {
 
   constructor(scene: Scene, input: InputManager, color: Color3, x: number, z: number) {
     this.input = input;
-    this.mesh = AssetFactory.createCharacter(scene, color);
+    const char = AssetFactory.createCharacter(scene, color);
+    this.mesh = char.root;
+    this.leftShoulder = char.leftShoulder;
+    this.rightShoulder = char.rightShoulder;
+    this.leftHip = char.leftHip;
+    this.rightHip = char.rightHip;
+    this.headNode = char.headNode;
     this.mesh.position = new Vector3(x, 0, z);
 
     // Invisible collision proxy
@@ -37,6 +58,8 @@ export class Player {
 
   update(dt: number, viewMode: ViewMode = "third", fpsYaw = 0, cameraAlpha = -Math.PI / 2): void {
     const drag = this.input.drag;
+    this.isMoving = false;
+
     if (drag.active && drag.magnitude > 0.05) {
       const speed = drag.magnitude * this.moveSpeed * dt;
       let vx = 0, vz = 0;
@@ -66,6 +89,7 @@ export class Player {
       this.mesh.position.z = this.collider.position.z;
 
       this.targetRotation = Math.atan2(vx, vz);
+      this.isMoving = true;
     }
 
     // Gravity & jump (vertical)
@@ -94,12 +118,58 @@ export class Player {
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     this.mesh.rotation.y += diff * Math.min(1, dt * 10);
+
+    // Animate limbs
+    this.animateLimbs(dt);
   }
 
   jump(): void {
     if (this.isGrounded) {
       this.velocityY = this.jumpForce;
       this.isGrounded = false;
+    }
+  }
+
+  private animateLimbs(dt: number): void {
+    if (this.isMoving && this.isGrounded) {
+      // Advance walk cycle
+      this.walkPhase += WALK_ANIM_SPEED * dt;
+      const s = Math.sin(this.walkPhase);
+
+      // Arms swing opposite to legs
+      this.leftShoulder.rotation.x = s * ARM_SWING;
+      this.rightShoulder.rotation.x = -s * ARM_SWING;
+
+      // Legs
+      this.leftHip.rotation.x = -s * LEG_SWING;
+      this.rightHip.rotation.x = s * LEG_SWING;
+
+      // Head bob (double frequency)
+      this.headNode.position.y = 1.3 + Math.abs(Math.sin(this.walkPhase * 2)) * HEAD_BOB_AMOUNT;
+    } else {
+      // Return to rest pose smoothly
+      const r = Math.min(1, dt * ANIM_RETURN_SPEED);
+      this.leftShoulder.rotation.x *= (1 - r);
+      this.rightShoulder.rotation.x *= (1 - r);
+      this.leftHip.rotation.x *= (1 - r);
+      this.rightHip.rotation.x *= (1 - r);
+      this.headNode.position.y += (1.3 - this.headNode.position.y) * r;
+
+      // Reset walk phase when stopped to start clean next time
+      if (Math.abs(this.leftHip.rotation.x) < 0.01) {
+        this.walkPhase = 0;
+      }
+    }
+
+    // In-air: tuck legs slightly forward
+    if (!this.isGrounded) {
+      const tuck = 0.3;
+      const r = Math.min(1, dt * 6);
+      this.leftHip.rotation.x += (tuck - this.leftHip.rotation.x) * r;
+      this.rightHip.rotation.x += (tuck - this.rightHip.rotation.x) * r;
+      // Arms up slightly
+      this.leftShoulder.rotation.x += (-0.4 - this.leftShoulder.rotation.x) * r;
+      this.rightShoulder.rotation.x += (-0.4 - this.rightShoulder.rotation.x) * r;
     }
   }
 

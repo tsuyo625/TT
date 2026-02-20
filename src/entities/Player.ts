@@ -14,6 +14,17 @@ const LEG_SWING = 0.5;         // max rotation (radians) for legs
 const HEAD_BOB_AMOUNT = 0.03;  // vertical head bob
 const ANIM_RETURN_SPEED = 8;   // how fast limbs return to rest
 
+// Stamina constants
+const MAX_STAMINA = 100;
+const STAMINA_DRAIN_RATE = 30;       // per second while dash-moving
+const STAMINA_RECOVER_RATE = 12;     // per second when not dashing (normal)
+const EXHAUST_DURATION = 3.0;        // seconds of blue bar
+const RED_REFILL_RATE = 20;          // per second after exhaustion ends
+const DASH_SPEED_MULT = 1.8;
+const EXHAUST_SPEED_MULT = 0.35;
+
+export type StaminaState = "normal" | "exhausted" | "recovery";
+
 export class Player {
   readonly mesh: TransformNode;
   private readonly collider: Mesh;
@@ -29,6 +40,12 @@ export class Player {
   private headNode: TransformNode;
   private walkPhase = 0;
   private isMoving = false;
+
+  // Dash / stamina
+  dashOn = false;
+  stamina = MAX_STAMINA;
+  exhaustTimer = 0;              // countdown during blue phase
+  staminaState: StaminaState = "normal";
 
   // Jump / gravity
   private velocityY = 0;
@@ -57,15 +74,27 @@ export class Player {
   }
 
   update(dt: number, viewMode: ViewMode = "third", fpsYaw = 0, cameraAlpha = -Math.PI / 2): void {
+    // Update stamina state machine
+    this.updateStamina(dt);
+
     const drag = this.input.drag;
     this.isMoving = false;
 
     if (drag.active && drag.magnitude > 0.05) {
-      const speed = drag.magnitude * this.moveSpeed * dt;
+      // Speed multiplier from stamina state
+      let speedMult = 1;
+      if (this.staminaState === "exhausted") {
+        speedMult = EXHAUST_SPEED_MULT;
+      } else if (this.dashOn && this.staminaState !== "recovery" && this.stamina > 0) {
+        speedMult = DASH_SPEED_MULT;
+      } else if (this.dashOn && this.staminaState === "recovery") {
+        speedMult = 1; // normal speed during recovery even if dash is on
+      }
+
+      const speed = drag.magnitude * this.moveSpeed * speedMult * dt;
       let vx = 0, vz = 0;
 
       if (viewMode === "first") {
-        // First-person: rotate input by camera yaw
         const inputX = drag.dirX;
         const inputZ = -drag.dirY;
         const cosY = Math.cos(fpsYaw);
@@ -73,7 +102,6 @@ export class Player {
         vx = (inputX * cosY + inputZ * sinY) * speed;
         vz = (-inputX * sinY + inputZ * cosY) * speed;
       } else {
-        // Third-person: rotate input to match camera direction
         const angle = cameraAlpha + Math.PI / 2;
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
@@ -132,8 +160,11 @@ export class Player {
 
   private animateLimbs(dt: number): void {
     if (this.isMoving && this.isGrounded) {
-      // Advance walk cycle
-      this.walkPhase += WALK_ANIM_SPEED * dt;
+      // Advance walk cycle (faster when dashing, slower when exhausted)
+      let animMult = 1;
+      if (this.staminaState === "exhausted") animMult = 0.5;
+      else if (this.dashOn && this.staminaState === "normal" && this.stamina > 0) animMult = 1.6;
+      this.walkPhase += WALK_ANIM_SPEED * animMult * dt;
       const s = Math.sin(this.walkPhase);
 
       // Arms swing opposite to legs
@@ -172,6 +203,52 @@ export class Player {
       this.rightShoulder.rotation.x += (-0.4 - this.rightShoulder.rotation.x) * r;
     }
   }
+
+  /* ---- Stamina state machine ---- */
+
+  private updateStamina(dt: number): void {
+    switch (this.staminaState) {
+      case "normal":
+        if (this.dashOn && this.isMoving && this.stamina > 0) {
+          // Drain stamina while dash-moving
+          this.stamina -= STAMINA_DRAIN_RATE * dt;
+          if (this.stamina <= 0) {
+            this.stamina = 0;
+            // Enter exhausted state
+            this.staminaState = "exhausted";
+            this.exhaustTimer = EXHAUST_DURATION;
+          }
+        } else if (!this.dashOn && this.stamina < MAX_STAMINA) {
+          // Recover when not dashing
+          this.stamina = Math.min(MAX_STAMINA, this.stamina + STAMINA_RECOVER_RATE * dt);
+        }
+        break;
+
+      case "exhausted":
+        // Blue bar counts down
+        this.exhaustTimer -= dt;
+        if (this.exhaustTimer <= 0) {
+          this.exhaustTimer = 0;
+          // Enter recovery state: red bar refills from 0
+          this.staminaState = "recovery";
+          this.stamina = 0;
+        }
+        break;
+
+      case "recovery":
+        // Red bar fills up at moderate speed
+        this.stamina += RED_REFILL_RATE * dt;
+        if (this.stamina >= MAX_STAMINA) {
+          this.stamina = MAX_STAMINA;
+          this.staminaState = "normal";
+        }
+        break;
+    }
+  }
+
+  /** Normalized 0-1 for UI gauge */
+  get staminaRatio(): number { return this.stamina / MAX_STAMINA; }
+  get exhaustRatio(): number { return this.exhaustTimer / EXHAUST_DURATION; }
 
   getPosition(): Vector3 {
     return this.mesh.position;

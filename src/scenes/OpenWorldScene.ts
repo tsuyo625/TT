@@ -40,6 +40,9 @@ export class OpenWorldScene {
   private viewToggleBtn!: HTMLButtonElement;
   private actionBtn!: HTMLButtonElement;
   private jumpBtn!: HTMLButtonElement;
+  private dashBtn!: HTMLButtonElement;
+  private staminaBarFill!: HTMLDivElement;
+  private staminaBarBg!: HTMLDivElement;
   private nearDoor = false;
 
   constructor(engine: Engine, input: InputManager) {
@@ -103,6 +106,20 @@ export class OpenWorldScene {
     this.actionBtn.addEventListener("touchstart", (e) => e.stopPropagation());
     document.body.appendChild(this.actionBtn);
 
+    // Dash button (above action button)
+    this.dashBtn = document.createElement("button");
+    this.dashBtn.textContent = "D";
+    this.dashBtn.style.cssText =
+      "position:fixed;right:24px;bottom:168px;width:56px;height:56px;" +
+      "border-radius:50%;border:2px solid rgba(255,255,255,0.25);" +
+      "background:rgba(0,0,0,0.4);color:#fff;font-size:18px;font-weight:bold;" +
+      "cursor:pointer;z-index:25;-webkit-tap-highlight-color:transparent;" +
+      "display:flex;align-items:center;justify-content:center;" +
+      "backdrop-filter:blur(4px);transition:background 0.15s,border-color 0.15s;";
+    this.dashBtn.addEventListener("click", () => this.toggleDash());
+    this.dashBtn.addEventListener("touchstart", (e) => e.stopPropagation());
+    document.body.appendChild(this.dashBtn);
+
     // Jump button (below action button)
     this.jumpBtn = document.createElement("button");
     this.jumpBtn.textContent = "J";
@@ -116,6 +133,33 @@ export class OpenWorldScene {
     this.jumpBtn.addEventListener("click", () => this.player.jump());
     this.jumpBtn.addEventListener("touchstart", (e) => e.stopPropagation());
     document.body.appendChild(this.jumpBtn);
+
+    // Stamina gauge (bottom-center)
+    this.staminaBarBg = document.createElement("div");
+    this.staminaBarBg.style.cssText =
+      "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);" +
+      "width:160px;height:14px;border-radius:7px;" +
+      "background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);" +
+      "z-index:25;overflow:hidden;backdrop-filter:blur(4px);";
+    this.staminaBarFill = document.createElement("div");
+    this.staminaBarFill.style.cssText =
+      "width:100%;height:100%;border-radius:7px;" +
+      "background:#e03030;transition:background-color 0.3s;";
+    this.staminaBarBg.appendChild(this.staminaBarFill);
+    document.body.appendChild(this.staminaBarBg);
+  }
+
+  /* ---- Dash toggle ---- */
+
+  private toggleDash(): void {
+    this.player.dashOn = !this.player.dashOn;
+    if (this.player.dashOn) {
+      this.dashBtn.style.background = "rgba(220,60,60,0.6)";
+      this.dashBtn.style.borderColor = "rgba(255,100,100,0.7)";
+    } else {
+      this.dashBtn.style.background = "rgba(0,0,0,0.4)";
+      this.dashBtn.style.borderColor = "rgba(255,255,255,0.25)";
+    }
   }
 
   /* ---- View toggle / camera transition ---- */
@@ -179,6 +223,9 @@ export class OpenWorldScene {
 
     // Auto-switch to first-person when entering a building
     this.checkIndoorAutoFPV(pos);
+
+    // Update stamina gauge
+    this.updateStaminaGauge();
 
     if (this.isTransitioning) {
       this.updateTransition(dt, pos);
@@ -391,6 +438,28 @@ export class OpenWorldScene {
       this.toggleView(); // switches to first-person
     }
     this.wasIndoors = indoors;
+  }
+
+  /* ---- Stamina gauge UI ---- */
+
+  private updateStaminaGauge(): void {
+    const state = this.player.staminaState;
+    if (state === "exhausted") {
+      // Blue bar – shows exhaustion countdown
+      this.staminaBarFill.style.width = (this.player.exhaustRatio * 100) + "%";
+      this.staminaBarFill.style.backgroundColor = "#3080e0";
+    } else {
+      // Red bar – shows stamina amount (normal or recovery)
+      this.staminaBarFill.style.width = (this.player.staminaRatio * 100) + "%";
+      this.staminaBarFill.style.backgroundColor = "#e03030";
+    }
+
+    // Auto-disable dash button visual when exhausted or recovery
+    if (state === "exhausted" || (state === "recovery" && this.player.dashOn)) {
+      this.dashBtn.style.opacity = "0.4";
+    } else {
+      this.dashBtn.style.opacity = "1";
+    }
   }
 
   /* ---- Camera updates ---- */

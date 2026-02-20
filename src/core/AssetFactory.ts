@@ -950,6 +950,424 @@ export class AssetFactory {
 
     return { root, fl, fr, bl, br, neck, tail };
   }
+
+  /* ================================================================
+     Japanese-style assets (和風)
+     ================================================================ */
+
+  /** Torii gate (鳥居) */
+  static createTorii(scene: Scene, height = 8, width = 7): TransformNode {
+    const root = new TransformNode("torii", scene);
+    const redMat = mat(scene, 0.75, 0.12, 0.1);
+    const darkMat = mat(scene, 0.2, 0.08, 0.06);
+
+    // Two main pillars
+    const pillarH = height;
+    const pillarD = 0.4;
+    const lPillar = CreateCylinder("toriiLP", { height: pillarH, diameter: pillarD, tessellation: 12 }, scene);
+    lPillar.material = redMat; lPillar.position.set(-width / 2, pillarH / 2, 0); lPillar.parent = root;
+    lPillar.checkCollisions = true;
+
+    const rPillar = CreateCylinder("toriiRP", { height: pillarH, diameter: pillarD, tessellation: 12 }, scene);
+    rPillar.material = redMat; rPillar.position.set(width / 2, pillarH / 2, 0); rPillar.parent = root;
+    rPillar.checkCollisions = true;
+
+    // Top beam (笠木 - kasagi) - extends beyond pillars
+    const kasagi = CreateBox("kasagi", { width: width + 2, height: 0.35, depth: 0.6 }, scene);
+    kasagi.material = darkMat; kasagi.position.set(0, pillarH + 0.15, 0); kasagi.parent = root;
+
+    // Second beam (島木 - shimagi)
+    const shimagi = CreateBox("shimagi", { width: width + 1.2, height: 0.25, depth: 0.45 }, scene);
+    shimagi.material = redMat; shimagi.position.set(0, pillarH - 0.3, 0); shimagi.parent = root;
+
+    // Cross beam (貫 - nuki)
+    const nuki = CreateBox("nuki", { width: width, height: 0.2, depth: 0.3 }, scene);
+    nuki.material = redMat; nuki.position.set(0, pillarH * 0.65, 0); nuki.parent = root;
+
+    return root;
+  }
+
+  /** Japanese temple / shrine (神社) */
+  static createTemple(scene: Scene): TransformNode {
+    const root = new TransformNode("temple", scene);
+    const woodMat = mat(scene, 0.5, 0.35, 0.18);
+    const darkWoodMat = mat(scene, 0.3, 0.2, 0.1);
+    const roofMat = mat(scene, 0.2, 0.22, 0.25);
+    const whiteMat = mat(scene, 0.92, 0.9, 0.85);
+    const goldMat = mat(scene, 0.85, 0.7, 0.2);
+
+    // Raised platform (基壇)
+    const platform = CreateBox("templePlatform", { width: 16, height: 1.2, depth: 12 }, scene);
+    platform.material = whiteMat; platform.position.set(0, 0.6, 0); platform.parent = root;
+    platform.checkCollisions = true;
+
+    // Steps at front
+    for (let i = 0; i < 4; i++) {
+      const step = CreateBox(`templeStep${i}`, { width: 6, height: 0.3, depth: 0.8 }, scene);
+      step.material = whiteMat;
+      step.position.set(0, 0.15 + i * 0.3, 6.4 + i * 0.8);
+      step.parent = root; step.checkCollisions = true;
+    }
+
+    // Main hall walls
+    const wallH = 4;
+    const bWall = CreateBox("tBWall", { width: 14, height: wallH, depth: 0.3 }, scene);
+    bWall.material = whiteMat; bWall.position.set(0, 1.2 + wallH / 2, -5); bWall.parent = root;
+    bWall.checkCollisions = true;
+
+    const lWall = CreateBox("tLWall", { width: 0.3, height: wallH, depth: 10 }, scene);
+    lWall.material = whiteMat; lWall.position.set(-7, 1.2 + wallH / 2, 0); lWall.parent = root;
+    lWall.checkCollisions = true;
+
+    const rWall = CreateBox("tRWall", { width: 0.3, height: wallH, depth: 10 }, scene);
+    rWall.material = whiteMat; rWall.position.set(7, 1.2 + wallH / 2, 0); rWall.parent = root;
+    rWall.checkCollisions = true;
+
+    // Front wall sections
+    const fwL = CreateBox("tFWL", { width: 4, height: wallH, depth: 0.3 }, scene);
+    fwL.material = whiteMat; fwL.position.set(-5, 1.2 + wallH / 2, 5); fwL.parent = root;
+    fwL.checkCollisions = true;
+
+    const fwR = CreateBox("tFWR", { width: 4, height: wallH, depth: 0.3 }, scene);
+    fwR.material = whiteMat; fwR.position.set(5, 1.2 + wallH / 2, 5); fwR.parent = root;
+    fwR.checkCollisions = true;
+
+    // Pillars (柱) at front
+    for (let i = -2; i <= 2; i++) {
+      const pillar = CreateCylinder(`tPillar${i}`, { height: wallH, diameter: 0.35, tessellation: 10 }, scene);
+      pillar.material = darkWoodMat;
+      pillar.position.set(i * 3.5, 1.2 + wallH / 2, 5.2);
+      pillar.parent = root; pillar.checkCollisions = true;
+    }
+
+    // Roof - layered (入母屋造り style)
+    const roofBase = CreateBox("roofBase", { width: 18, height: 0.4, depth: 14 }, scene);
+    roofBase.material = roofMat; roofBase.position.set(0, 1.2 + wallH + 0.2, 0); roofBase.parent = root;
+
+    // Peaked roof layers
+    for (let i = 0; i < 4; i++) {
+      const scale = 1 - i * 0.2;
+      const roofLayer = CreateBox(`roofL${i}`, { width: 18 * scale, height: 0.3, depth: 14 * scale }, scene);
+      roofLayer.material = roofMat;
+      roofLayer.position.set(0, 1.2 + wallH + 0.6 + i * 0.8, 0);
+      roofLayer.parent = root;
+    }
+
+    // Ridge ornament (鬼瓦)
+    const ridge = CreateBox("ridge", { width: 1.2, height: 1, depth: 0.5 }, scene);
+    ridge.material = goldMat; ridge.position.set(0, 1.2 + wallH + 4, 0); ridge.parent = root;
+
+    // Floor inside
+    const floor = CreateBox("templeFloor", { width: 13.5, height: 0.05, depth: 9.5 }, scene);
+    floor.material = woodMat; floor.position.set(0, 1.23, 0); floor.parent = root;
+
+    return root;
+  }
+
+  /** Stone lantern (石灯篭) */
+  static createStoneLantern(scene: Scene): TransformNode {
+    const root = new TransformNode("lantern", scene);
+    const stoneMat = mat(scene, 0.55, 0.53, 0.5);
+    const lightMat = mat(scene, 1, 0.9, 0.5);
+    lightMat.emissiveColor = new Color3(0.6, 0.5, 0.2);
+
+    // Base
+    const base = CreateCylinder("lBase", { height: 0.3, diameter: 0.8, tessellation: 6 }, scene);
+    base.material = stoneMat; base.position.y = 0.15; base.parent = root;
+
+    // Shaft
+    const shaft = CreateCylinder("lShaft", { height: 1.2, diameter: 0.25, tessellation: 6 }, scene);
+    shaft.material = stoneMat; shaft.position.y = 0.9; shaft.parent = root;
+
+    // Light box (火袋)
+    const box = CreateBox("lBox", { width: 0.6, height: 0.5, depth: 0.6 }, scene);
+    box.material = stoneMat; box.position.y = 1.75; box.parent = root;
+
+    // Light glow
+    const glow = CreateBox("lGlow", { width: 0.35, height: 0.3, depth: 0.35 }, scene);
+    glow.material = lightMat; glow.position.y = 1.75; glow.parent = root;
+
+    // Roof (笠)
+    const roof = CreateBox("lRoof", { width: 0.9, height: 0.15, depth: 0.9 }, scene);
+    roof.material = stoneMat; roof.position.y = 2.1; roof.parent = root;
+
+    // Tip
+    const tip = CreateSphere("lTip", { diameter: 0.2, segments: 6 }, scene);
+    tip.material = stoneMat; tip.position.y = 2.35; tip.parent = root;
+
+    return root;
+  }
+
+  /** Cherry blossom tree (桜) */
+  static createCherryTree(scene: Scene): TransformNode {
+    const root = new TransformNode("cherry", scene);
+    const trunkMat = mat(scene, 0.45, 0.3, 0.18);
+    const blossomMat = mat(scene, 0.95, 0.7, 0.78);
+    const blossomMat2 = mat(scene, 0.98, 0.8, 0.85);
+
+    // Trunk (slightly curved look)
+    const trunk = CreateCylinder("cTrunk", { height: 2.5, diameterTop: 0.2, diameterBottom: 0.35, tessellation: 8 }, scene);
+    trunk.material = trunkMat; trunk.position.y = 1.25; trunk.parent = root;
+    trunk.checkCollisions = true;
+
+    // Branch
+    const branch = CreateCylinder("cBranch", { height: 1.5, diameterTop: 0.08, diameterBottom: 0.15, tessellation: 6 }, scene);
+    branch.material = trunkMat; branch.rotation.z = 0.6; branch.position.set(0.5, 2.2, 0); branch.parent = root;
+
+    // Main blossom clouds
+    const b1 = CreateSphere("blossom1", { diameterX: 3, diameterY: 2, diameterZ: 3, segments: 8 }, scene);
+    b1.material = blossomMat; b1.position.set(0, 3.2, 0); b1.parent = root;
+
+    const b2 = CreateSphere("blossom2", { diameterX: 2, diameterY: 1.5, diameterZ: 2, segments: 8 }, scene);
+    b2.material = blossomMat2; b2.position.set(1, 2.8, 0.5); b2.parent = root;
+
+    const b3 = CreateSphere("blossom3", { diameterX: 1.8, diameterY: 1.2, diameterZ: 1.8, segments: 6 }, scene);
+    b3.material = blossomMat; b3.position.set(-0.8, 2.9, -0.3); b3.parent = root;
+
+    return root;
+  }
+
+  /** Bamboo cluster (竹) */
+  static createBambooCluster(scene: Scene, count = 6): TransformNode {
+    const root = new TransformNode("bamboo", scene);
+    const bambooMat = mat(scene, 0.35, 0.55, 0.25);
+    const leafMat = mat(scene, 0.25, 0.5, 0.2);
+
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const rx = Math.cos(angle) * (0.3 + Math.random() * 0.4);
+      const rz = Math.sin(angle) * (0.3 + Math.random() * 0.4);
+      const h = 3 + Math.random() * 3;
+
+      const stalk = CreateCylinder(`bamStalk${i}`, { height: h, diameterTop: 0.06, diameterBottom: 0.08, tessellation: 8 }, scene);
+      stalk.material = bambooMat; stalk.position.set(rx, h / 2, rz); stalk.parent = root;
+
+      // Leaf cluster at top
+      const leaf = CreateSphere(`bamLeaf${i}`, { diameterX: 0.8, diameterY: 0.4, diameterZ: 0.8, segments: 6 }, scene);
+      leaf.material = leafMat; leaf.position.set(rx, h - 0.2, rz); leaf.parent = root;
+    }
+
+    return root;
+  }
+
+  /** Zen garden (枯山水) with raked gravel and rocks */
+  static createZenGarden(scene: Scene): TransformNode {
+    const root = new TransformNode("zenGarden", scene);
+    const gravelMat = mat(scene, 0.85, 0.83, 0.78);
+    const stoneMat = mat(scene, 0.45, 0.43, 0.4);
+    const borderMat = mat(scene, 0.5, 0.35, 0.2);
+
+    // Gravel base
+    const gravel = CreateBox("gravel", { width: 20, height: 0.05, depth: 15 }, scene);
+    gravel.material = gravelMat; gravel.position.y = 0.03; gravel.parent = root;
+
+    // Wooden border
+    const borders = [
+      { x: 0, z: -7.5, w: 20.4, d: 0.2 },
+      { x: 0, z: 7.5, w: 20.4, d: 0.2 },
+      { x: -10, z: 0, w: 0.2, d: 15 },
+      { x: 10, z: 0, w: 0.2, d: 15 },
+    ];
+    for (let i = 0; i < borders.length; i++) {
+      const b = borders[i];
+      const border = CreateBox(`zenBorder${i}`, { width: b.w, height: 0.3, depth: b.d }, scene);
+      border.material = borderMat; border.position.set(b.x, 0.15, b.z); border.parent = root;
+      border.checkCollisions = true;
+    }
+
+    // Decorative rocks
+    const rocks = [
+      { x: -3, z: -2, sx: 1.5, sy: 1, sz: 1.2 },
+      { x: 4, z: 1, sx: 2, sy: 1.4, sz: 1.6 },
+      { x: -1, z: 3, sx: 1, sy: 0.8, sz: 0.9 },
+      { x: 6, z: -3, sx: 0.8, sy: 0.6, sz: 0.7 },
+      { x: -5, z: 2, sx: 1.2, sy: 0.9, sz: 1.1 },
+    ];
+    for (let i = 0; i < rocks.length; i++) {
+      const r = rocks[i];
+      const rock = CreateSphere(`zenRock${i}`, { diameterX: r.sx, diameterY: r.sy, diameterZ: r.sz, segments: 6 }, scene);
+      rock.material = stoneMat; rock.position.set(r.x, r.sy * 0.3, r.z); rock.parent = root;
+      rock.checkCollisions = true;
+    }
+
+    // Raked lines (decorative grooves in gravel)
+    const lineMat = mat(scene, 0.78, 0.76, 0.72);
+    for (let i = -8; i <= 8; i += 1) {
+      const line = CreateBox(`zenLine${i}`, { width: 18, height: 0.02, depth: 0.08 }, scene);
+      line.material = lineMat; line.position.set(0, 0.06, i * 0.8); line.parent = root;
+    }
+
+    return root;
+  }
+
+  /** Wooden bridge (橋) */
+  static createWoodenBridge(scene: Scene, length = 10, width = 3): TransformNode {
+    const root = new TransformNode("bridge", scene);
+    const woodMat = mat(scene, 0.55, 0.38, 0.18);
+    const railMat = mat(scene, 0.5, 0.32, 0.15);
+
+    // Bridge deck with slight arch
+    for (let i = 0; i < 12; i++) {
+      const t = i / 11;
+      const y = Math.sin(t * Math.PI) * 0.8;
+      const plank = CreateBox(`plank${i}`, { width: width, height: 0.12, depth: length / 12 }, scene);
+      plank.material = woodMat;
+      plank.position.set(0, y + 0.06, -length / 2 + (i + 0.5) * (length / 12));
+      plank.parent = root; plank.checkCollisions = true;
+    }
+
+    // Railings
+    for (const side of [-1, 1]) {
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        const y = Math.sin(t * Math.PI) * 0.8;
+        const post = CreateBox(`railPost${side}_${i}`, { width: 0.1, height: 1, depth: 0.1 }, scene);
+        post.material = railMat;
+        post.position.set(side * width / 2, y + 0.5, -length / 2 + i * (length / 6));
+        post.parent = root; post.checkCollisions = true;
+      }
+      // Top rail
+      const topRail = CreateBox(`topRail${side}`, { width: 0.08, height: 0.06, depth: length }, scene);
+      topRail.material = railMat;
+      topRail.position.set(side * width / 2, 1.4, 0);
+      topRail.parent = root;
+    }
+
+    return root;
+  }
+
+  /** Pond (池) */
+  static createPond(scene: Scene, radiusX = 8, radiusZ = 6): TransformNode {
+    const root = new TransformNode("pond", scene);
+    const waterMat = mat(scene, 0.15, 0.35, 0.45);
+    waterMat.alpha = 0.7;
+    const edgeMat = mat(scene, 0.4, 0.38, 0.35);
+
+    // Water surface
+    const water = CreateSphere("pondWater", { diameterX: radiusX * 2, diameterY: 0.3, diameterZ: radiusZ * 2, segments: 16 }, scene);
+    water.material = waterMat; water.position.y = -0.05; water.parent = root;
+
+    // Edge rocks
+    for (let i = 0; i < 16; i++) {
+      const angle = (i / 16) * Math.PI * 2;
+      const rx = Math.cos(angle) * (radiusX + 0.3 + Math.random() * 0.3);
+      const rz = Math.sin(angle) * (radiusZ + 0.3 + Math.random() * 0.3);
+      const s = 0.4 + Math.random() * 0.6;
+      const rock = CreateSphere(`pondRock${i}`, { diameterX: s, diameterY: s * 0.6, diameterZ: s, segments: 6 }, scene);
+      rock.material = edgeMat; rock.position.set(rx, 0.1, rz); rock.parent = root;
+    }
+
+    return root;
+  }
+
+  /* ================================================================
+     Forest & Cave assets
+     ================================================================ */
+
+  /** Large tree for dense forest */
+  static createLargeTree(scene: Scene): TransformNode {
+    const root = new TransformNode("largeTree", scene);
+    const trunkMat = mat(scene, 0.4, 0.28, 0.1);
+    const foliageMat = mat(scene, 0.12, 0.45, 0.18);
+    const foliageMat2 = mat(scene, 0.15, 0.5, 0.22);
+
+    // Thick trunk
+    const trunk = CreateCylinder("lgTrunk", { height: 4, diameterTop: 0.35, diameterBottom: 0.6, tessellation: 10 }, scene);
+    trunk.material = trunkMat; trunk.position.y = 2; trunk.parent = root;
+    trunk.checkCollisions = true;
+
+    // Large foliage clusters
+    const f1 = CreateSphere("lgFoliage1", { diameterX: 4, diameterY: 3, diameterZ: 4, segments: 8 }, scene);
+    f1.material = foliageMat; f1.position.set(0, 5, 0); f1.parent = root;
+
+    const f2 = CreateSphere("lgFoliage2", { diameterX: 3, diameterY: 2.2, diameterZ: 3, segments: 8 }, scene);
+    f2.material = foliageMat2; f2.position.set(1.2, 4.5, 0.8); f2.parent = root;
+
+    const f3 = CreateSphere("lgFoliage3", { diameterX: 2.5, diameterY: 2, diameterZ: 2.5, segments: 6 }, scene);
+    f3.material = foliageMat; f3.position.set(-1, 4.2, -0.6); f3.parent = root;
+
+    return root;
+  }
+
+  /** Fallen log */
+  static createFallenLog(scene: Scene): TransformNode {
+    const root = new TransformNode("fallenLog", scene);
+    const logMat = mat(scene, 0.35, 0.25, 0.12);
+    const mossMat = mat(scene, 0.2, 0.4, 0.15);
+
+    const log = CreateCylinder("logBody", { height: 4, diameter: 0.4, tessellation: 8 }, scene);
+    log.material = logMat; log.rotation.z = Math.PI / 2; log.position.y = 0.2; log.parent = root;
+    log.checkCollisions = true;
+
+    // Moss patches
+    const moss = CreateSphere("moss", { diameterX: 1, diameterY: 0.15, diameterZ: 0.5, segments: 6 }, scene);
+    moss.material = mossMat; moss.position.set(0.5, 0.35, 0); moss.parent = root;
+
+    return root;
+  }
+
+  /** Mushroom cluster */
+  static createMushrooms(scene: Scene): TransformNode {
+    const root = new TransformNode("mushrooms", scene);
+    const stemMat = mat(scene, 0.85, 0.82, 0.75);
+    const capMat = mat(scene, 0.7, 0.2, 0.15);
+    const capMat2 = mat(scene, 0.8, 0.65, 0.3);
+
+    const mushData = [
+      { x: 0, z: 0, h: 0.4, cap: 0.3, m: capMat },
+      { x: 0.3, z: 0.2, h: 0.3, cap: 0.25, m: capMat2 },
+      { x: -0.2, z: 0.15, h: 0.5, cap: 0.35, m: capMat },
+    ];
+    for (let i = 0; i < mushData.length; i++) {
+      const md = mushData[i];
+      const stem = CreateCylinder(`mStem${i}`, { height: md.h, diameterTop: 0.06, diameterBottom: 0.08, tessellation: 8 }, scene);
+      stem.material = stemMat; stem.position.set(md.x, md.h / 2, md.z); stem.parent = root;
+
+      const cap = CreateSphere(`mCap${i}`, { diameterX: md.cap * 2, diameterY: md.cap, diameterZ: md.cap * 2, segments: 8 }, scene);
+      cap.material = md.m; cap.position.set(md.x, md.h + md.cap * 0.3, md.z); cap.parent = root;
+    }
+
+    return root;
+  }
+
+  /** Cave stalactite or stalagmite */
+  static createStalactite(scene: Scene, height = 2, hanging = true): Mesh {
+    const stoneMat = mat(scene, 0.4, 0.38, 0.35);
+    const cone = CreateCylinder("stalactite", {
+      height,
+      diameterTop: hanging ? 0.5 : 0.05,
+      diameterBottom: hanging ? 0.05 : 0.5,
+      tessellation: 8,
+    }, scene);
+    cone.material = stoneMat;
+    cone.checkCollisions = true;
+    return cone;
+  }
+
+  /** Glowing crystal formation */
+  static createCrystal(scene: Scene, color: Color3 = new Color3(0.3, 0.6, 1)): TransformNode {
+    const root = new TransformNode("crystal", scene);
+    const crystalMat = mat(scene, color.r, color.g, color.b);
+    crystalMat.emissiveColor = new Color3(color.r * 0.4, color.g * 0.4, color.b * 0.4);
+    crystalMat.alpha = 0.85;
+
+    const shards = [
+      { x: 0, z: 0, h: 1.8, d: 0.2, rx: 0, rz: 0 },
+      { x: 0.15, z: 0.1, h: 1.3, d: 0.15, rx: 0.15, rz: -0.1 },
+      { x: -0.1, z: 0.12, h: 1.5, d: 0.18, rx: -0.1, rz: 0.2 },
+      { x: 0.08, z: -0.1, h: 1, d: 0.12, rx: 0.1, rz: 0.15 },
+    ];
+    for (let i = 0; i < shards.length; i++) {
+      const s = shards[i];
+      const shard = CreateCylinder(`shard${i}`, { height: s.h, diameterTop: 0.02, diameterBottom: s.d, tessellation: 6 }, scene);
+      shard.material = crystalMat;
+      shard.position.set(s.x, s.h / 2, s.z);
+      shard.rotation.set(s.rx, 0, s.rz);
+      shard.parent = root;
+    }
+
+    return root;
+  }
 }
 
 export interface AnimalMesh {

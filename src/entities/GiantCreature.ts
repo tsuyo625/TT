@@ -3,14 +3,14 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { AssetFactory, TitanMesh } from "../core/AssetFactory";
 
-const WANDER_RADIUS = 150;
+const WANDER_RADIUS = 300;
 const MOVE_SPEED = 3;  // Slow and lumbering
 const PAUSE_MIN = 5;
 const PAUSE_MAX = 15;
 const LEG_SWING = 0.15;  // Smaller swing for massive creature
 const NECK_BOB = 0.08;
 const TAIL_SWING = 0.1;
-const MAP_HALF = 200;  // Can go beyond normal map bounds
+const MAP_HALF = 500;  // Can go beyond normal map bounds
 
 export class GiantCreature {
   readonly root: TransformNode;

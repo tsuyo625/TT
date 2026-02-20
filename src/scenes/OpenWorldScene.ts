@@ -351,13 +351,25 @@ export class OpenWorldScene {
       { kind: "cat", x: -20, z: -14 },
       { kind: "cat", x: 5, z: 30 },
       { kind: "cat", x: -8, z: -30 },
+      // Cats in Japanese area
+      { kind: "cat", x: 270, z: 260 },
+      { kind: "cat", x: 290, z: 310 },
       // Elephants (outer areas near hills)
       { kind: "elephant", x: 55, z: 25 },
       { kind: "elephant", x: -55, z: -30 },
+      // Elephants in expanded world
+      { kind: "elephant", x: 200, z: 150 },
+      { kind: "elephant", x: -200, z: -200 },
       // Lions (roaming open areas)
       { kind: "lion", x: 35, z: 40 },
       { kind: "lion", x: -35, z: -40 },
       { kind: "lion", x: 50, z: -15 },
+      // Lions in expanded areas
+      { kind: "lion", x: 300, z: -100 },
+      { kind: "lion", x: -250, z: 150 },
+      // Forest area cats
+      { kind: "cat", x: -300, z: 280 },
+      { kind: "cat", x: -280, z: 300 },
     ];
     for (const s of spawns) {
       this.animals.push(new Animal(scene, s.kind, s.x, s.z, sg));

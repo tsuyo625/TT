@@ -1368,6 +1368,440 @@ export class AssetFactory {
 
     return root;
   }
+
+  /* ================================================================
+     Area-specific giant creatures (エリア固有の巨大生物)
+     ================================================================ */
+
+  /** Japanese Dragon 龍神 – serpentine dragon for the Japanese area */
+  static createDragon(scene: Scene): TitanMesh {
+    const root = new TransformNode("dragon", scene);
+    const s = 6;
+
+    const bodyMat = mat(scene, 0.1, 0.35, 0.3);
+    const scaleMat = mat(scene, 0.15, 0.45, 0.35);
+    const goldMat = mat(scene, 0.85, 0.7, 0.2);
+    goldMat.emissiveColor = new Color3(0.3, 0.25, 0.05);
+    const eyeMat = mat(scene, 0.6, 0.9, 1);
+    eyeMat.emissiveColor = new Color3(0.4, 0.7, 1);
+
+    const bodyH = 2.5 * s;
+
+    // Serpentine body – long and narrow
+    const body = CreateBox("dragonBody", { width: 2 * s, height: 1.8 * s, depth: 6 * s }, scene);
+    body.material = bodyMat;
+    body.position.set(0, bodyH, 0);
+    body.parent = root;
+
+    // Dorsal fins along the spine
+    for (let i = 0; i < 7; i++) {
+      const fin = CreateBox("dragonFin" + i, { width: 0.15 * s, height: (1 + Math.sin(i * 0.6) * 0.5) * s, depth: 0.5 * s }, scene);
+      fin.material = goldMat;
+      fin.position.set(0, bodyH + 1.2 * s, -2.5 * s + i * 0.9 * s);
+      fin.parent = root;
+    }
+
+    // Neck
+    const neck = new TransformNode("dragonNeck", scene);
+    neck.position.set(0, bodyH + 0.5 * s, 3 * s);
+    neck.parent = root;
+
+    const neckMesh = CreateCylinder("dragonNeckMesh", { height: 3.5 * s, diameterTop: 0.7 * s, diameterBottom: 1.2 * s, tessellation: 12 }, scene);
+    neckMesh.material = scaleMat;
+    neckMesh.rotation.x = -0.6;
+    neckMesh.position.set(0, 1.5 * s, 1 * s);
+    neckMesh.parent = neck;
+
+    // Head – angular and fierce
+    const head = CreateBox("dragonHead", { width: 1.4 * s, height: 0.9 * s, depth: 2.2 * s }, scene);
+    head.material = scaleMat;
+    head.position.set(0, 3.2 * s, 2.5 * s);
+    head.parent = neck;
+
+    // Snout
+    const snout = CreateBox("dragonSnout", { width: 0.8 * s, height: 0.5 * s, depth: 1.2 * s }, scene);
+    snout.material = bodyMat;
+    snout.position.set(0, 2.9 * s, 3.8 * s);
+    snout.parent = neck;
+
+    // Antlers (鹿角 – classic Japanese dragon)
+    for (const side of [-1, 1]) {
+      const antler = CreateCylinder("dragonAntler", { height: 2 * s, diameterTop: 0.06 * s, diameterBottom: 0.2 * s, tessellation: 6 }, scene);
+      antler.material = goldMat;
+      antler.rotation.z = side * 0.5;
+      antler.rotation.x = -0.3;
+      antler.position.set(side * 0.5 * s, 4 * s, 2 * s);
+      antler.parent = neck;
+
+      // Branch
+      const branch = CreateCylinder("dragonAntlerB", { height: 0.8 * s, diameterTop: 0.04 * s, diameterBottom: 0.1 * s, tessellation: 6 }, scene);
+      branch.material = goldMat;
+      branch.rotation.z = side * 0.8;
+      branch.position.set(side * 0.7 * s, 4.5 * s, 2.2 * s);
+      branch.parent = neck;
+    }
+
+    // Glowing eyes
+    for (const side of [-1, 1]) {
+      const eye = CreateSphere("dragonEye", { diameter: 0.35 * s, segments: 8 }, scene);
+      eye.material = eyeMat;
+      eye.position.set(side * 0.45 * s, 3.4 * s, 3.3 * s);
+      eye.parent = neck;
+    }
+
+    // Whiskers (龍のひげ)
+    for (const side of [-1, 1]) {
+      const whisker = CreateCylinder("dragonWhisker", { height: 2 * s, diameterTop: 0.02 * s, diameterBottom: 0.06 * s, tessellation: 4 }, scene);
+      whisker.material = goldMat;
+      whisker.rotation.z = side * 0.6;
+      whisker.rotation.x = 0.4;
+      whisker.position.set(side * 0.5 * s, 2.8 * s, 4 * s);
+      whisker.parent = neck;
+    }
+
+    // Tail
+    const tail = new TransformNode("dragonTail", scene);
+    tail.position.set(0, bodyH, -3 * s);
+    tail.parent = root;
+
+    for (let i = 0; i < 8; i++) {
+      const seg = CreateBox("dragonTailSeg" + i, { width: (1.5 - i * 0.15) * s, height: (1 - i * 0.1) * s, depth: 1 * s }, scene);
+      seg.material = i % 2 === 0 ? bodyMat : scaleMat;
+      seg.position.set(0, -0.2 * i * s, -1 * i * s);
+      seg.parent = tail;
+    }
+
+    // Tail fin
+    const tailFin = CreateBox("dragonTailFin", { width: 1.5 * s, height: 0.1 * s, depth: 1.2 * s }, scene);
+    tailFin.material = goldMat;
+    tailFin.position.set(0, -1.5 * s, -8 * s);
+    tailFin.parent = tail;
+
+    // Dragon legs (shorter, clawed)
+    const legH = 2.5 * s;
+    const legW = 0.7 * s;
+    const makeDragonLeg = (name: string, x: number, z: number) => {
+      const joint = new TransformNode(name, scene);
+      joint.position.set(x, bodyH - 0.8 * s, z);
+      joint.parent = root;
+      const upper = CreateBox(name + "U", { width: legW, height: legH * 0.5, depth: legW }, scene);
+      upper.material = bodyMat;
+      upper.position.set(0, -legH * 0.25, 0);
+      upper.parent = joint;
+      const lower = CreateBox(name + "L", { width: legW * 0.7, height: legH * 0.4, depth: legW * 0.8 }, scene);
+      lower.material = scaleMat;
+      lower.position.set(0, -legH * 0.6, 0);
+      lower.parent = joint;
+      const claw = CreateBox(name + "C", { width: legW * 1.3, height: legW * 0.3, depth: legW * 1.8 }, scene);
+      claw.material = goldMat;
+      claw.position.set(0, -legH * 0.85, legW * 0.3);
+      claw.parent = joint;
+      return joint;
+    };
+
+    const fl = makeDragonLeg("dragonFL", -1 * s, 2 * s);
+    const fr = makeDragonLeg("dragonFR", 1 * s, 2 * s);
+    const bl = makeDragonLeg("dragonBL", -1 * s, -2 * s);
+    const br = makeDragonLeg("dragonBR", 1 * s, -2 * s);
+
+    // Glowing pearl (宝珠) on forehead
+    const pearl = CreateSphere("dragonPearl", { diameter: 0.5 * s, segments: 12 }, scene);
+    const pearlMat = mat(scene, 0.7, 0.95, 1);
+    pearlMat.emissiveColor = new Color3(0.5, 0.8, 1);
+    pearlMat.alpha = 0.9;
+    pearl.material = pearlMat;
+    pearl.position.set(0, 3.8 * s, 3 * s);
+    pearl.parent = neck;
+
+    return { root, fl, fr, bl, br, neck, tail };
+  }
+
+  /** Forest Guardian 森の守護者 – a massive tree-like creature */
+  static createForestGuardian(scene: Scene): TitanMesh {
+    const root = new TransformNode("forestGuardian", scene);
+    const s = 7;
+
+    const barkMat = mat(scene, 0.35, 0.22, 0.12);
+    const darkBarkMat = mat(scene, 0.25, 0.15, 0.08);
+    const mossMat = mat(scene, 0.2, 0.5, 0.15);
+    mossMat.emissiveColor = new Color3(0.05, 0.15, 0.03);
+    const leafMat = mat(scene, 0.15, 0.55, 0.1);
+    const glowMat = mat(scene, 0.3, 0.9, 0.2);
+    glowMat.emissiveColor = new Color3(0.2, 0.7, 0.1);
+
+    const bodyH = 3 * s;
+
+    // Trunk-like body
+    const body = CreateCylinder("guardianBody", { height: 3 * s, diameterTop: 2.5 * s, diameterBottom: 3 * s, tessellation: 10 }, scene);
+    body.material = barkMat;
+    body.position.set(0, bodyH, 0);
+    body.parent = root;
+
+    // Bark ridges
+    for (let i = 0; i < 6; i++) {
+      const ridge = CreateBox("guardianRidge" + i, { width: 0.4 * s, height: 2 * s, depth: 0.5 * s }, scene);
+      ridge.material = darkBarkMat;
+      const angle = (i / 6) * Math.PI * 2;
+      ridge.position.set(Math.cos(angle) * 1.3 * s, bodyH, Math.sin(angle) * 1.3 * s);
+      ridge.rotation.y = angle;
+      ridge.parent = root;
+    }
+
+    // Moss patches
+    for (let i = 0; i < 4; i++) {
+      const moss = CreateSphere("guardianMoss" + i, { diameter: 1 * s, segments: 6 }, scene);
+      moss.material = mossMat;
+      const angle = (i / 4) * Math.PI * 2 + 0.3;
+      moss.position.set(Math.cos(angle) * 1.2 * s, bodyH + 0.8 * s, Math.sin(angle) * 1.2 * s);
+      moss.scaling.set(1, 0.5, 1);
+      moss.parent = root;
+    }
+
+    // Crown of branches and leaves (head area)
+    const neck = new TransformNode("guardianNeck", scene);
+    neck.position.set(0, bodyH + 1.5 * s, 0);
+    neck.parent = root;
+
+    // Upper trunk / neck
+    const upperTrunk = CreateCylinder("guardianUpperTrunk", { height: 2 * s, diameterTop: 1.2 * s, diameterBottom: 2 * s, tessellation: 8 }, scene);
+    upperTrunk.material = barkMat;
+    upperTrunk.position.set(0, 0.5 * s, 0);
+    upperTrunk.parent = neck;
+
+    // Face – hollow eyes in bark
+    const face = CreateBox("guardianFace", { width: 1.5 * s, height: 1.2 * s, depth: 0.8 * s }, scene);
+    face.material = darkBarkMat;
+    face.position.set(0, 1 * s, 0.6 * s);
+    face.parent = neck;
+
+    // Glowing eyes
+    for (const side of [-1, 1]) {
+      const eye = CreateSphere("guardianEye", { diameter: 0.35 * s, segments: 8 }, scene);
+      eye.material = glowMat;
+      eye.position.set(side * 0.4 * s, 1.2 * s, 1 * s);
+      eye.parent = neck;
+    }
+
+    // Crown branches
+    for (let i = 0; i < 5; i++) {
+      const branch = CreateCylinder("guardianBranch" + i, { height: 2.5 * s, diameterTop: 0.05 * s, diameterBottom: 0.3 * s, tessellation: 6 }, scene);
+      branch.material = barkMat;
+      const angle = (i / 5) * Math.PI * 2;
+      branch.rotation.z = 0.4 + Math.random() * 0.3;
+      branch.rotation.y = angle;
+      branch.position.set(Math.cos(angle) * 0.4 * s, 2 * s, Math.sin(angle) * 0.4 * s);
+      branch.parent = neck;
+
+      // Leaf clusters on branches
+      const leaves = CreateSphere("guardianLeaf" + i, { diameter: 1.5 * s, segments: 6 }, scene);
+      leaves.material = leafMat;
+      leaves.position.set(Math.cos(angle) * 1.5 * s, 3 * s, Math.sin(angle) * 1.5 * s);
+      leaves.scaling.set(1, 0.6, 1);
+      leaves.parent = neck;
+    }
+
+    // Tail – a thick root tendril
+    const tail = new TransformNode("guardianTail", scene);
+    tail.position.set(0, bodyH - 1 * s, -1.5 * s);
+    tail.parent = root;
+
+    for (let i = 0; i < 5; i++) {
+      const seg = CreateCylinder("guardianTailSeg" + i, { height: 1.2 * s, diameterTop: (0.8 - i * 0.12) * s, diameterBottom: (1 - i * 0.12) * s, tessellation: 8 }, scene);
+      seg.material = i % 2 === 0 ? barkMat : darkBarkMat;
+      seg.position.set(0, -0.3 * i * s, -1 * i * s);
+      seg.parent = tail;
+    }
+
+    // Root-like legs
+    const legH = 3 * s;
+    const makeGuardianLeg = (name: string, x: number, z: number) => {
+      const joint = new TransformNode(name, scene);
+      joint.position.set(x, bodyH - 1.5 * s, z);
+      joint.parent = root;
+
+      const upper = CreateCylinder(name + "U", { height: legH * 0.5, diameterTop: 0.5 * s, diameterBottom: 0.8 * s, tessellation: 8 }, scene);
+      upper.material = barkMat;
+      upper.position.set(0, -legH * 0.25, 0);
+      upper.parent = joint;
+
+      const lower = CreateCylinder(name + "L", { height: legH * 0.5, diameterTop: 0.4 * s, diameterBottom: 0.6 * s, tessellation: 8 }, scene);
+      lower.material = darkBarkMat;
+      lower.position.set(0, -legH * 0.6, 0);
+      lower.parent = joint;
+
+      // Root-like foot spread
+      for (let r = 0; r < 3; r++) {
+        const rootToe = CreateCylinder(name + "R" + r, { height: 1.2 * s, diameterTop: 0.05 * s, diameterBottom: 0.15 * s, tessellation: 6 }, scene);
+        rootToe.material = darkBarkMat;
+        const ra = ((r - 1) / 3) * Math.PI * 0.6;
+        rootToe.rotation.z = Math.cos(ra) * 0.7;
+        rootToe.rotation.x = Math.sin(ra) * 0.7;
+        rootToe.position.set(0, -legH * 0.85, 0);
+        rootToe.parent = joint;
+      }
+
+      return joint;
+    };
+
+    const fl = makeGuardianLeg("guardianFL", -1.3 * s, 1.3 * s);
+    const fr = makeGuardianLeg("guardianFR", 1.3 * s, 1.3 * s);
+    const bl = makeGuardianLeg("guardianBL", -1.3 * s, -1.3 * s);
+    const br = makeGuardianLeg("guardianBR", 1.3 * s, -1.3 * s);
+
+    // Glowing rune markings on trunk
+    for (let i = 0; i < 3; i++) {
+      const rune = CreateBox("guardianRune" + i, { width: 0.6 * s, height: 0.15 * s, depth: 0.6 * s }, scene);
+      rune.material = glowMat;
+      rune.position.set(0, bodyH - 0.5 * s + i * 0.8 * s, 1.5 * s);
+      rune.parent = root;
+    }
+
+    return { root, fl, fr, bl, br, neck, tail };
+  }
+
+  /** Cave Golem 洞窟のゴーレム – a massive stone/crystal creature */
+  static createCaveGolem(scene: Scene): TitanMesh {
+    const root = new TransformNode("caveGolem", scene);
+    const s = 6;
+
+    const stoneMat = mat(scene, 0.3, 0.28, 0.32);
+    const darkStoneMat = mat(scene, 0.2, 0.18, 0.22);
+    const crystalMat = mat(scene, 0.4, 0.2, 0.8);
+    crystalMat.emissiveColor = new Color3(0.3, 0.1, 0.6);
+    crystalMat.alpha = 0.9;
+    const lavaMat = mat(scene, 1, 0.4, 0.1);
+    lavaMat.emissiveColor = new Color3(1, 0.3, 0.05);
+
+    const bodyH = 3 * s;
+
+    // Massive boulder body
+    const body = CreateSphere("golemBody", { diameter: 4 * s, segments: 8 }, scene);
+    body.material = stoneMat;
+    body.scaling.set(1, 0.8, 1.2);
+    body.position.set(0, bodyH, 0);
+    body.parent = root;
+
+    // Rock plates / armor chunks
+    for (let i = 0; i < 8; i++) {
+      const plate = CreateBox("golemPlate" + i, { width: (0.8 + Math.random() * 0.5) * s, height: (0.5 + Math.random() * 0.3) * s, depth: (0.6 + Math.random() * 0.4) * s }, scene);
+      plate.material = darkStoneMat;
+      const angle = (i / 8) * Math.PI * 2;
+      plate.position.set(Math.cos(angle) * 1.5 * s, bodyH + (Math.random() - 0.3) * s, Math.sin(angle) * 1.8 * s);
+      plate.rotation.set(Math.random() * 0.3, angle, Math.random() * 0.2);
+      plate.parent = root;
+    }
+
+    // Crystal formations growing from body
+    const crystalPositions = [
+      { x: 0.8, y: 1.5, z: 0.5, h: 2, rx: 0.2, rz: -0.3 },
+      { x: -0.6, y: 1.3, z: -0.3, h: 1.5, rx: -0.15, rz: 0.4 },
+      { x: 0.2, y: 1.6, z: -0.8, h: 1.8, rx: 0.1, rz: 0.2 },
+      { x: -0.9, y: 1.2, z: 0.6, h: 1.3, rx: -0.2, rz: -0.2 },
+    ];
+    for (let i = 0; i < crystalPositions.length; i++) {
+      const cp = crystalPositions[i];
+      const crystal = CreateCylinder("golemCrystal" + i, { height: cp.h * s, diameterTop: 0.05 * s, diameterBottom: 0.3 * s, tessellation: 6 }, scene);
+      crystal.material = crystalMat;
+      crystal.position.set(cp.x * s, bodyH + cp.y * s, cp.z * s);
+      crystal.rotation.set(cp.rx, 0, cp.rz);
+      crystal.parent = root;
+    }
+
+    // Neck / head area – hunched forward
+    const neck = new TransformNode("golemNeck", scene);
+    neck.position.set(0, bodyH + 1 * s, 1.5 * s);
+    neck.parent = root;
+
+    // Head – rough boulder
+    const head = CreateSphere("golemHead", { diameter: 2 * s, segments: 6 }, scene);
+    head.material = darkStoneMat;
+    head.scaling.set(1, 0.8, 1);
+    head.position.set(0, 0.5 * s, 0.5 * s);
+    head.parent = neck;
+
+    // Lava eyes
+    for (const side of [-1, 1]) {
+      const eye = CreateSphere("golemEye", { diameter: 0.4 * s, segments: 6 }, scene);
+      eye.material = lavaMat;
+      eye.position.set(side * 0.5 * s, 0.6 * s, 1.2 * s);
+      eye.parent = neck;
+    }
+
+    // Lava mouth crack
+    const mouth = CreateBox("golemMouth", { width: 0.8 * s, height: 0.15 * s, depth: 0.3 * s }, scene);
+    mouth.material = lavaMat;
+    mouth.position.set(0, 0.1 * s, 1.3 * s);
+    mouth.parent = neck;
+
+    // Horn-like crystal on head
+    const headCrystal = CreateCylinder("golemHeadCrystal", { height: 1.5 * s, diameterTop: 0.04 * s, diameterBottom: 0.25 * s, tessellation: 6 }, scene);
+    headCrystal.material = crystalMat;
+    headCrystal.position.set(0, 1.5 * s, 0.3 * s);
+    headCrystal.rotation.x = -0.3;
+    headCrystal.parent = neck;
+
+    // Tail – dragging rubble trail
+    const tail = new TransformNode("golemTail", scene);
+    tail.position.set(0, bodyH - 0.5 * s, -2 * s);
+    tail.parent = root;
+
+    for (let i = 0; i < 5; i++) {
+      const chunk = CreateSphere("golemTailChunk" + i, { diameter: (1.2 - i * 0.18) * s, segments: 6 }, scene);
+      chunk.material = i % 2 === 0 ? stoneMat : darkStoneMat;
+      chunk.position.set(0, -0.3 * i * s, -0.9 * i * s);
+      chunk.parent = tail;
+    }
+
+    // Tail crystal tip
+    const tailCrystal = CreateCylinder("golemTailCrystal", { height: 1 * s, diameterTop: 0.04 * s, diameterBottom: 0.2 * s, tessellation: 6 }, scene);
+    tailCrystal.material = crystalMat;
+    tailCrystal.rotation.x = 1;
+    tailCrystal.position.set(0, -1.5 * s, -4.5 * s);
+    tailCrystal.parent = tail;
+
+    // Massive stone/golem legs
+    const legH = 2.8 * s;
+    const makeGolemLeg = (name: string, x: number, z: number) => {
+      const joint = new TransformNode(name, scene);
+      joint.position.set(x, bodyH - 1 * s, z);
+      joint.parent = root;
+
+      const upper = CreateBox(name + "U", { width: 1.2 * s, height: legH * 0.5, depth: 1.2 * s }, scene);
+      upper.material = stoneMat;
+      upper.position.set(0, -legH * 0.25, 0);
+      upper.parent = joint;
+
+      const lower = CreateBox(name + "L", { width: 1 * s, height: legH * 0.45, depth: 1 * s }, scene);
+      lower.material = darkStoneMat;
+      lower.position.set(0, -legH * 0.6, 0);
+      lower.parent = joint;
+
+      // Flat stone foot
+      const foot = CreateBox(name + "F", { width: 1.8 * s, height: 0.4 * s, depth: 2 * s }, scene);
+      foot.material = darkStoneMat;
+      foot.position.set(0, -legH * 0.85, 0.3 * s);
+      foot.parent = joint;
+
+      return joint;
+    };
+
+    const fl = makeGolemLeg("golemFL", -1.5 * s, 1.5 * s);
+    const fr = makeGolemLeg("golemFR", 1.5 * s, 1.5 * s);
+    const bl = makeGolemLeg("golemBL", -1.5 * s, -1.5 * s);
+    const br = makeGolemLeg("golemBR", 1.5 * s, -1.5 * s);
+
+    // Lava cracks glowing on body
+    for (let i = 0; i < 3; i++) {
+      const crack = CreateBox("golemCrack" + i, { width: 0.12 * s, height: 1.5 * s, depth: 0.12 * s }, scene);
+      crack.material = lavaMat;
+      const angle = (i / 3) * Math.PI * 2;
+      crack.position.set(Math.cos(angle) * 1.6 * s, bodyH, Math.sin(angle) * 2 * s);
+      crack.rotation.set(0, angle, 0.2);
+      crack.parent = root;
+    }
+
+    return { root, fl, fr, bl, br, neck, tail };
+  }
 }
 
 export interface AnimalMesh {

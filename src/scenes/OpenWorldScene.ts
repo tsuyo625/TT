@@ -6,7 +6,8 @@ import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
 import { OpenWorld, DoorInfo, ElevatorInfo, BuildingBounds } from "../world/OpenWorld";
 import { Animal, AnimalKind } from "../entities/Animal";
-import { GiantCreature } from "../entities/GiantCreature";
+import { GiantCreature, GiantCreatureOpts } from "../entities/GiantCreature";
+import { AssetFactory } from "../core/AssetFactory";
 import { NetworkManager } from "../network/NetworkManager";
 import { RemotePlayer } from "../entities/RemotePlayer";
 import { NetworkEvent, RemotePlayerState } from "../network/types";
@@ -27,7 +28,7 @@ export class OpenWorldScene {
   private player!: Player;
   private world!: OpenWorld;
   private animals: Animal[] = [];
-  private giantCreature: GiantCreature | null = null;
+  private giantCreatures: GiantCreature[] = [];
 
   // Multiplayer
   private networkManager: NetworkManager | null = null;
@@ -375,8 +376,39 @@ export class OpenWorldScene {
       this.animals.push(new Animal(scene, s.kind, s.x, s.z, sg));
     }
 
-    // Spawn giant titan creature wandering the map
-    this.giantCreature = new GiantCreature(scene, -80, -80, sg);
+    // Spawn giant creatures – one per area
+    // Original titan roams near the town
+    this.giantCreatures.push(new GiantCreature(scene, -80, -80, sg));
+
+    // Japanese Dragon (龍神) roams the Japanese area
+    this.giantCreatures.push(new GiantCreature(scene, 280, 280, sg, {
+      meshFactory: AssetFactory.createDragon,
+      wanderRadius: 150,
+      moveSpeed: 4,
+      legSwing: 0.12,
+      neckBob: 0.1,
+      tailSwing: 0.15,
+    }));
+
+    // Forest Guardian (森の守護者) roams the dense forest
+    this.giantCreatures.push(new GiantCreature(scene, -300, 280, sg, {
+      meshFactory: AssetFactory.createForestGuardian,
+      wanderRadius: 120,
+      moveSpeed: 2,
+      legSwing: 0.1,
+      neckBob: 0.06,
+      tailSwing: 0.08,
+    }));
+
+    // Cave Golem (洞窟のゴーレム) roams near the cave entrance
+    this.giantCreatures.push(new GiantCreature(scene, -320, -280, sg, {
+      meshFactory: AssetFactory.createCaveGolem,
+      wanderRadius: 100,
+      moveSpeed: 1.5,
+      legSwing: 0.08,
+      neckBob: 0.04,
+      tailSwing: 0.06,
+    }));
   }
 
   /* ---- View toggle / camera transition ---- */
@@ -459,7 +491,7 @@ export class OpenWorldScene {
     this.animateDoors(dt);
     this.animateElevators(dt);
     for (const a of this.animals) a.update(dt);
-    this.giantCreature?.update(dt);
+    for (const gc of this.giantCreatures) gc.update(dt);
 
     // Player movement (pass camera alpha for third-person input rotation)
     this.player.update(dt, this.engine.viewMode, this.fpsYaw, this.engine.thirdPersonCam.alpha);

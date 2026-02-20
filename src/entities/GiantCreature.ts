@@ -3,14 +3,25 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { AssetFactory, TitanMesh } from "../core/AssetFactory";
 
-const WANDER_RADIUS = 300;
-const MOVE_SPEED = 3;  // Slow and lumbering
-const PAUSE_MIN = 5;
-const PAUSE_MAX = 15;
-const LEG_SWING = 0.15;  // Smaller swing for massive creature
-const NECK_BOB = 0.08;
-const TAIL_SWING = 0.1;
-const MAP_HALF = 500;  // Can go beyond normal map bounds
+const DEFAULTS = {
+  wanderRadius: 300,
+  moveSpeed: 3,
+  pauseMin: 5,
+  pauseMax: 15,
+  legSwing: 0.15,
+  neckBob: 0.08,
+  tailSwing: 0.1,
+  mapHalf: 500,
+};
+
+export interface GiantCreatureOpts {
+  meshFactory?: (scene: Scene) => TitanMesh;
+  wanderRadius?: number;
+  moveSpeed?: number;
+  legSwing?: number;
+  neckBob?: number;
+  tailSwing?: number;
+}
 
 export class GiantCreature {
   readonly root: TransformNode;
@@ -21,6 +32,13 @@ export class GiantCreature {
   private neck: TransformNode;
   private tail: TransformNode;
 
+  // per-instance motion params
+  private wanderRadius: number;
+  private moveSpeed: number;
+  private legSwing: number;
+  private neckBob: number;
+  private tailSwing: number;
+
   // AI state
   private homeX: number;
   private homeZ: number;
@@ -30,8 +48,15 @@ export class GiantCreature {
   private timer = 0;
   private walkPhase = 0;
 
-  constructor(scene: Scene, x: number, z: number, shadowGen: ShadowGenerator) {
-    const mesh: TitanMesh = AssetFactory.createTitan(scene);
+  constructor(scene: Scene, x: number, z: number, shadowGen: ShadowGenerator, opts?: GiantCreatureOpts) {
+    this.wanderRadius = opts?.wanderRadius ?? DEFAULTS.wanderRadius;
+    this.moveSpeed = opts?.moveSpeed ?? DEFAULTS.moveSpeed;
+    this.legSwing = opts?.legSwing ?? DEFAULTS.legSwing;
+    this.neckBob = opts?.neckBob ?? DEFAULTS.neckBob;
+    this.tailSwing = opts?.tailSwing ?? DEFAULTS.tailSwing;
+
+    const factory = opts?.meshFactory ?? AssetFactory.createTitan;
+    const mesh: TitanMesh = factory(scene);
 
     this.root = mesh.root;
     this.fl = mesh.fl;
@@ -49,18 +74,18 @@ export class GiantCreature {
     this.root.getChildMeshes().forEach((m) => shadowGen.addShadowCaster(m));
 
     // Start with a random pause
-    this.timer = Math.random() * PAUSE_MAX;
+    this.timer = Math.random() * DEFAULTS.pauseMax;
     this.pickTarget();
   }
 
   private pickTarget(): void {
     const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * WANDER_RADIUS;
+    const dist = Math.random() * this.wanderRadius;
     this.targetX = this.homeX + Math.cos(angle) * dist;
     this.targetZ = this.homeZ + Math.sin(angle) * dist;
     // Clamp to extended map bounds
-    this.targetX = Math.max(-MAP_HALF, Math.min(MAP_HALF, this.targetX));
-    this.targetZ = Math.max(-MAP_HALF, Math.min(MAP_HALF, this.targetZ));
+    this.targetX = Math.max(-DEFAULTS.mapHalf, Math.min(DEFAULTS.mapHalf, this.targetX));
+    this.targetZ = Math.max(-DEFAULTS.mapHalf, Math.min(DEFAULTS.mapHalf, this.targetZ));
   }
 
   update(dt: number): void {
@@ -87,13 +112,13 @@ export class GiantCreature {
     if (dist < 5) {
       // Arrived – pause
       this.state = "pause";
-      this.timer = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
+      this.timer = DEFAULTS.pauseMin + Math.random() * (DEFAULTS.pauseMax - DEFAULTS.pauseMin);
       return;
     }
 
     const nx = dx / dist;
     const nz = dz / dist;
-    const step = MOVE_SPEED * dt;
+    const step = this.moveSpeed * dt;
 
     this.root.position.x += nx * step;
     this.root.position.z += nz * step;
@@ -106,22 +131,21 @@ export class GiantCreature {
     this.root.rotation.y += rotDiff * dt * 0.5; // Slow turning
 
     // Walk animation
-    this.walkPhase += MOVE_SPEED * 0.8 * dt;
-    const s = Math.sin(this.walkPhase);
-    const c = Math.cos(this.walkPhase);
+    this.walkPhase += this.moveSpeed * 0.8 * dt;
+    const sn = Math.sin(this.walkPhase);
 
     // Legs - alternating diagonal pairs
-    this.fl.rotation.x = s * LEG_SWING;
-    this.br.rotation.x = s * LEG_SWING;
-    this.fr.rotation.x = -s * LEG_SWING;
-    this.bl.rotation.x = -s * LEG_SWING;
+    this.fl.rotation.x = sn * this.legSwing;
+    this.br.rotation.x = sn * this.legSwing;
+    this.fr.rotation.x = -sn * this.legSwing;
+    this.bl.rotation.x = -sn * this.legSwing;
 
     // Neck bobs up and down
-    this.neck.rotation.x = Math.sin(this.walkPhase * 2) * NECK_BOB;
+    this.neck.rotation.x = Math.sin(this.walkPhase * 2) * this.neckBob;
 
     // Tail sways
-    this.tail.rotation.y = Math.sin(this.walkPhase * 0.7) * TAIL_SWING;
-    this.tail.rotation.x = Math.sin(this.walkPhase * 0.5) * TAIL_SWING * 0.5;
+    this.tail.rotation.y = Math.sin(this.walkPhase * 0.7) * this.tailSwing;
+    this.tail.rotation.x = Math.sin(this.walkPhase * 0.5) * this.tailSwing * 0.5;
   }
 
   private easeToRest(dt: number): void {

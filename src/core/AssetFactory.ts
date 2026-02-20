@@ -64,59 +64,147 @@ export class AssetFactory {
     return root;
   }
 
-  /** Simple house with walls and roof; returns door pivot for interaction */
+  /** Hollow house with interior – returns door pivot for interaction */
   static createHouse(scene: Scene, w: number, h: number, d: number, wallColor: Color3, roofColor: Color3): { root: TransformNode; doorPivot: TransformNode } {
     const root = new TransformNode("house", scene);
+    const t = 0.15;        // wall thickness
+    const doorW = 1.2;     // wide enough for player ellipsoid (0.8 diameter)
+    const doorH = 1.8;
 
     const wallMat = mat(scene, wallColor.r, wallColor.g, wallColor.b);
     const roofMat = mat(scene, roofColor.r, roofColor.g, roofColor.b);
 
-    const walls = CreateBox("walls", { width: w, height: h, depth: d }, scene);
-    walls.material = wallMat;
-    walls.position.y = h / 2;
-    walls.parent = root;
-    walls.receiveShadows = true;
-    walls.checkCollisions = true;
+    // helper: create a wall segment with shadow + collision
+    const wall = (name: string, bw: number, bh: number, bd: number, x: number, y: number, z: number) => {
+      const m = CreateBox(name, { width: bw, height: bh, depth: bd }, scene);
+      m.material = wallMat; m.position.set(x, y, z);
+      m.parent = root; m.receiveShadows = true; m.checkCollisions = true;
+      return m;
+    };
 
-    // Stepped roof
-    const roof = CreateBox("roof", { width: w + 0.6, height: 0.3, depth: d + 0.6 }, scene);
-    roof.material = roofMat;
-    roof.position.y = h + 0.15;
-    roof.parent = root;
+    // ── Outer walls (hollow) ──
+    wall("bWall", w, h, t, 0, h / 2, -d / 2 + t / 2);                       // back
+    wall("lWall", t, h, d, -w / 2 + t / 2, h / 2, 0);                       // left
+    wall("rWall", t, h, d, w / 2 - t / 2, h / 2, 0);                        // right
+
+    // front wall – two sections flanking the door opening + lintel above
+    const sideW = (w - doorW) / 2;
+    wall("fWallL", sideW, h, t, -(doorW + sideW) / 2, h / 2, d / 2 - t / 2);
+    wall("fWallR", sideW, h, t, (doorW + sideW) / 2, h / 2, d / 2 - t / 2);
+    const lintelH = h - doorH;
+    if (lintelH > 0) {
+      wall("lintel", doorW, lintelH, t, 0, doorH + lintelH / 2, d / 2 - t / 2);
+    }
+
+    // ── Roof (same stepped style) ──
+    const roofB = CreateBox("roof", { width: w + 0.6, height: 0.3, depth: d + 0.6 }, scene);
+    roofB.material = roofMat; roofB.position.y = h + 0.15; roofB.parent = root;
 
     const peak = CreateBox("peak", { width: w * 0.7, height: 0.3, depth: d * 0.7 }, scene);
-    peak.material = roofMat;
-    peak.position.y = h + 0.45;
-    peak.parent = root;
+    peak.material = roofMat; peak.position.y = h + 0.45; peak.parent = root;
 
     const tip = CreateBox("tip", { width: w * 0.35, height: 0.25, depth: d * 0.35 }, scene);
-    tip.material = roofMat;
-    tip.position.y = h + 0.7;
-    tip.parent = root;
+    tip.material = roofMat; tip.position.y = h + 0.7; tip.parent = root;
 
-    // Door with pivot at hinge edge (for open/close animation)
+    // ── Door with pivot + collision (blocks entry when closed) ──
     const doorMat = mat(scene, 0.35, 0.22, 0.1);
     const doorPivot = new TransformNode("doorPivot", scene);
-    doorPivot.position.set(-0.3, 0, d / 2 + 0.03);
+    doorPivot.position.set(-doorW / 2, 0, d / 2 - t / 2);
     doorPivot.parent = root;
 
-    const door = CreateBox("door", { width: 0.6, height: 1.2, depth: 0.05 }, scene);
-    door.material = doorMat;
-    door.position.set(0.3, 0.6, 0);
-    door.parent = doorPivot;
+    const doorMesh = CreateBox("door", { width: doorW, height: doorH, depth: 0.08 }, scene);
+    doorMesh.material = doorMat;
+    doorMesh.position.set(doorW / 2, doorH / 2, 0);
+    doorMesh.parent = doorPivot;
+    doorMesh.checkCollisions = true;
 
-    // Windows
+    // door handle
+    const handleMat = mat(scene, 0.75, 0.7, 0.3);
+    const handle = CreateBox("handle", { width: 0.06, height: 0.06, depth: 0.08 }, scene);
+    handle.material = handleMat;
+    handle.position.set(doorW * 0.35, doorH * 0.45, 0.06);
+    handle.parent = doorPivot;
+
+    // ── Windows ──
     const winMat = mat(scene, 0.6, 0.8, 1.0);
-    const winPositions = [
-      new Vector3(-w / 3, h * 0.6, d / 2 + 0.03),
-      new Vector3(w / 3, h * 0.6, d / 2 + 0.03),
-    ];
-    winPositions.forEach((pos, i) => {
-      const win = CreateBox(`win${i}`, { width: 0.5, height: 0.5, depth: 0.05 }, scene);
-      win.material = winMat;
-      win.position = pos;
-      win.parent = root;
+
+    // front windows (only if wall sections wide enough)
+    if (sideW > 0.7) {
+      [-(doorW + sideW) / 2, (doorW + sideW) / 2].forEach((wx, i) => {
+        const fw = CreateBox(`fWin${i}`, { width: 0.5, height: 0.5, depth: 0.05 }, scene);
+        fw.material = winMat; fw.position.set(wx, h * 0.6, d / 2 + 0.03); fw.parent = root;
+      });
+    }
+
+    // side windows (visible from outside & inside)
+    [[-w / 2 - 0.03, 0.05, 0.5], [w / 2 + 0.03, 0.05, 0.5]].forEach(([wx, ww, wd], i) => {
+      const sw = CreateBox(`sWin${i}`, { width: ww, height: 0.5, depth: wd }, scene);
+      sw.material = winMat; sw.position.set(wx, h * 0.55, 0); sw.parent = root;
     });
+
+    // back windows
+    [-w / 4, w / 4].forEach((wx, i) => {
+      const bw = CreateBox(`bWin${i}`, { width: 0.5, height: 0.5, depth: 0.05 }, scene);
+      bw.material = winMat; bw.position.set(wx, h * 0.6, -d / 2 - 0.03); bw.parent = root;
+    });
+
+    // ── Interior ──
+    const iw = w - t * 2;   // interior width
+    const id = d - t * 2;   // interior depth
+
+    // floor (wood)
+    const floorMat = mat(scene, 0.6, 0.45, 0.25);
+    const fl = CreateBox("iFloor", { width: iw, height: 0.05, depth: id }, scene);
+    fl.material = floorMat; fl.position.set(0, 0.025, 0); fl.parent = root;
+
+    // ceiling
+    const ceilMat = mat(scene, 0.92, 0.9, 0.85);
+    const ceil = CreateBox("ceil", { width: iw, height: 0.05, depth: id }, scene);
+    ceil.material = ceilMat; ceil.position.set(0, h - 0.025, 0); ceil.parent = root;
+
+    // rug under table
+    const rugMat = mat(scene, 0.55, 0.2, 0.18);
+    const rug = CreateBox("rug", { width: Math.min(1.8, iw * 0.45), height: 0.01, depth: Math.min(1.4, id * 0.35) }, scene);
+    rug.material = rugMat; rug.position.set(0, 0.06, 0); rug.parent = root;
+
+    // table
+    const tblMat = mat(scene, 0.55, 0.38, 0.18);
+    const tblW = Math.min(1.0, iw * 0.25);
+    const tblD = Math.min(0.6, id * 0.18);
+    const tblTop = CreateBox("tblTop", { width: tblW, height: 0.04, depth: tblD }, scene);
+    tblTop.material = tblMat; tblTop.position.set(0, 0.65, 0); tblTop.parent = root;
+
+    const lx = tblW / 2 - 0.04, lz = tblD / 2 - 0.04;
+    [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]].forEach(([px, pz], i) => {
+      const leg = CreateBox(`tl${i}`, { width: 0.04, height: 0.63, depth: 0.04 }, scene);
+      leg.material = tblMat; leg.position.set(px, 0.315, pz); leg.parent = root;
+    });
+
+    // bookshelf against back wall
+    const shelfMat = mat(scene, 0.45, 0.3, 0.15);
+    const shW = Math.min(iw * 0.35, 1.5);
+    const shH = Math.min(h * 0.45, 1.3);
+    const shelf = CreateBox("shelf", { width: shW, height: shH, depth: 0.3 }, scene);
+    shelf.material = shelfMat;
+    shelf.position.set(iw * 0.18, shH / 2, -d / 2 + t + 0.15);
+    shelf.parent = root; shelf.checkCollisions = true;
+
+    // books on shelf
+    const bookCols: [number, number, number][] = [[0.7, 0.2, 0.2], [0.2, 0.5, 0.7], [0.6, 0.6, 0.2], [0.3, 0.6, 0.3]];
+    const bkW = shW / (bookCols.length + 1);
+    bookCols.forEach(([r, g, b], i) => {
+      const bk = CreateBox(`bk${i}`, { width: bkW * 0.8, height: shH * 0.22, depth: 0.18 }, scene);
+      bk.material = mat(scene, r, g, b);
+      bk.position.set(iw * 0.18 - shW / 2 + bkW * (i + 0.5) + bkW * 0.1, shH * 0.65, -d / 2 + t + 0.15);
+      bk.parent = root;
+    });
+
+    // small cabinet on left side
+    const cabMat = mat(scene, 0.5, 0.35, 0.2);
+    const cab = CreateBox("cab", { width: 0.5, height: 0.6, depth: 0.4 }, scene);
+    cab.material = cabMat;
+    cab.position.set(-iw / 2 + 0.35, 0.3, -id / 2 + 0.3);
+    cab.parent = root; cab.checkCollisions = true;
 
     return { root, doorPivot };
   }

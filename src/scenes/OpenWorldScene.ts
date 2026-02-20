@@ -4,13 +4,15 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Engine, ViewMode } from "../core/Engine";
 import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
-import { OpenWorld, DoorInfo } from "../world/OpenWorld";
+import { OpenWorld, DoorInfo, ElevatorInfo } from "../world/OpenWorld";
 
 const CAMERA_SENSITIVITY = 0.005;
 const FPS_YAW_SENSITIVITY = 0.004;
 const FPS_PITCH_SENSITIVITY = 0.003;
 const TRANSITION_DURATION = 0.5;
 const DOOR_INTERACT_RANGE = 3;
+const ELEVATOR_INTERACT_RANGE = 2.5;
+const ELEVATOR_SPEED = 3; // units per second
 
 export class OpenWorldScene {
   private engine: Engine;
@@ -159,8 +161,9 @@ export class OpenWorldScene {
   /* ---- Main update ---- */
 
   private update(dt: number): void {
-    // Animate doors every frame
+    // Animate doors and elevators every frame
     this.animateDoors(dt);
+    this.animateElevators(dt);
 
     // Player movement (pass camera alpha for third-person input rotation)
     this.player.update(dt, this.engine.viewMode, this.fpsYaw, this.engine.thirdPersonCam.alpha);
@@ -250,6 +253,28 @@ export class OpenWorldScene {
 
   private tryInteract(): void {
     const playerPos = this.player.getPosition();
+
+    // Check elevator first (higher priority when near one)
+    let nearestElev: ElevatorInfo | null = null;
+    let nearestElevDist = Infinity;
+    for (const elev of this.world.elevators) {
+      const dx = playerPos.x - elev.worldX;
+      const dz = playerPos.z - elev.worldZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < ELEVATOR_INTERACT_RANGE && dist < nearestElevDist) {
+        nearestElev = elev;
+        nearestElevDist = dist;
+      }
+    }
+
+    if (nearestElev && !nearestElev.moving) {
+      // Cycle to next floor
+      nearestElev.targetFloor = (nearestElev.currentFloor + 1) % nearestElev.numFloors;
+      nearestElev.moving = true;
+      return;
+    }
+
+    // Otherwise check doors
     let nearest: DoorInfo | null = null;
     let nearestDist = Infinity;
 
@@ -280,8 +305,36 @@ export class OpenWorldScene {
     }
   }
 
+  private animateElevators(dt: number): void {
+    for (const elev of this.world.elevators) {
+      if (!elev.moving) continue;
+
+      const targetY = elev.targetFloor * elev.floorH + 0.08;
+      const diff = targetY - elev.currentY;
+
+      if (Math.abs(diff) < 0.05) {
+        // Arrived
+        elev.currentY = targetY;
+        elev.currentFloor = elev.targetFloor;
+        elev.moving = false;
+      } else {
+        // Move toward target
+        const dir = Math.sign(diff);
+        elev.currentY += dir * ELEVATOR_SPEED * dt;
+        // Don't overshoot
+        if (dir > 0 && elev.currentY > targetY) elev.currentY = targetY;
+        if (dir < 0 && elev.currentY < targetY) elev.currentY = targetY;
+      }
+
+      // Update platform position (local Y within building root)
+      elev.platform.position.y = elev.currentY;
+    }
+  }
+
   private updateActionHint(playerPos: Vector3): void {
     let near = false;
+
+    // Check doors
     for (const door of this.world.doors) {
       const doorPos = door.pivot.getAbsolutePosition();
       const dx = playerPos.x - doorPos.x;
@@ -289,6 +342,18 @@ export class OpenWorldScene {
       if (dx * dx + dz * dz < DOOR_INTERACT_RANGE * DOOR_INTERACT_RANGE) {
         near = true;
         break;
+      }
+    }
+
+    // Check elevators
+    if (!near) {
+      for (const elev of this.world.elevators) {
+        const dx = playerPos.x - elev.worldX;
+        const dz = playerPos.z - elev.worldZ;
+        if (dx * dx + dz * dz < ELEVATOR_INTERACT_RANGE * ELEVATOR_INTERACT_RANGE) {
+          near = true;
+          break;
+        }
       }
     }
 

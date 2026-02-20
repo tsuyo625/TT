@@ -17,6 +17,19 @@ export interface DoorInfo {
   currentAngle: number;
 }
 
+export interface ElevatorInfo {
+  platform: Mesh;
+  /** world-space position of the elevator shaft center */
+  worldX: number;
+  worldZ: number;
+  floorH: number;
+  numFloors: number;
+  currentFloor: number;
+  targetFloor: number;
+  currentY: number;
+  moving: boolean;
+}
+
 function mat(scene: Scene, r: number, g: number, b: number): StandardMaterial {
   const m = new StandardMaterial("m" + Math.random().toString(36).slice(2), scene);
   m.diffuseColor = new Color3(r, g, b);
@@ -25,6 +38,7 @@ function mat(scene: Scene, r: number, g: number, b: number): StandardMaterial {
 
 export class OpenWorld {
   readonly doors: DoorInfo[] = [];
+  readonly elevators: ElevatorInfo[] = [];
 
   constructor(scene: Scene, shadowGen: ShadowGenerator) {
     this.buildGround(scene);
@@ -386,11 +400,28 @@ export class OpenWorld {
     ];
 
     for (const b of buildings) {
-      const { root: building, doorPivot } = AssetFactory.createBuilding(scene, b.w, b.h, b.d, b.color);
-      building.position.set(b.x, 0, b.z);
-      building.rotation.y = b.ry;
-      building.getChildMeshes().forEach((m) => shadowGen.addShadowCaster(m));
-      this.doors.push({ pivot: doorPivot, isOpen: false, currentAngle: 0 });
+      const result = AssetFactory.createBuilding(scene, b.w, b.h, b.d, b.color);
+      result.root.position.set(b.x, 0, b.z);
+      result.root.rotation.y = b.ry;
+      result.root.getChildMeshes().forEach((m) => shadowGen.addShadowCaster(m));
+      this.doors.push({ pivot: result.doorPivot, isOpen: false, currentAngle: 0 });
+
+      // Compute world-space elevator position accounting for rotation
+      const cosR = Math.cos(b.ry);
+      const sinR = Math.sin(b.ry);
+      const localX = result.elevShaftX;
+      const localZ = result.elevShaftZ;
+      this.elevators.push({
+        platform: result.elevPlatform,
+        worldX: b.x + localX * cosR - localZ * sinR,
+        worldZ: b.z + localX * sinR + localZ * cosR,
+        floorH: result.floorH,
+        numFloors: result.numFloors,
+        currentFloor: 0,
+        targetFloor: 0,
+        currentY: 0.08,
+        moving: false,
+      });
     }
   }
 

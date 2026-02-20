@@ -209,8 +209,11 @@ export class AssetFactory {
     return { root, doorPivot };
   }
 
-  /** Tall building / apartment – hollow interior with elevator + exterior fire escape */
-  static createBuilding(scene: Scene, w: number, h: number, d: number, color: Color3): { root: TransformNode; doorPivot: TransformNode } {
+  /** Tall building / apartment – hollow interior with working elevator + exterior fire escape */
+  static createBuilding(scene: Scene, w: number, h: number, d: number, color: Color3): {
+    root: TransformNode; doorPivot: TransformNode; elevPlatform: Mesh;
+    elevShaftX: number; elevShaftZ: number; floorH: number; numFloors: number;
+  } {
     const root = new TransformNode("building", scene);
     const t = 0.2; // wall thickness
     const doorW = 1.4;
@@ -221,23 +224,20 @@ export class AssetFactory {
     const wallMat = mat(scene, color.r, color.g, color.b);
     const darkMat = mat(scene, color.r * 0.7, color.g * 0.7, color.b * 0.7);
     const winMat = mat(scene, 0.7, 0.85, 1.0);
-    const floorMat = mat(scene, 0.45, 0.43, 0.4);
+    const floorMatl = mat(scene, 0.45, 0.43, 0.4);
     const metalMat = mat(scene, 0.4, 0.4, 0.45);
     const elevMat = mat(scene, 0.55, 0.55, 0.6);
     const railMat = mat(scene, 0.35, 0.35, 0.38);
 
     // ── Outer walls (hollow shell) ──
-    // Back wall (solid)
     const bWall = CreateBox("bWall", { width: w, height: h, depth: t }, scene);
     bWall.material = wallMat; bWall.position.set(0, h / 2, -d / 2 + t / 2);
     bWall.parent = root; bWall.checkCollisions = true; bWall.receiveShadows = true;
 
-    // Left wall
     const lWall = CreateBox("lWall", { width: t, height: h, depth: d }, scene);
     lWall.material = wallMat; lWall.position.set(-w / 2 + t / 2, h / 2, 0);
     lWall.parent = root; lWall.checkCollisions = true; lWall.receiveShadows = true;
 
-    // Right wall
     const rWall = CreateBox("rWall", { width: t, height: h, depth: d }, scene);
     rWall.material = wallMat; rWall.position.set(w / 2 - t / 2, h / 2, 0);
     rWall.parent = root; rWall.checkCollisions = true; rWall.receiveShadows = true;
@@ -269,128 +269,159 @@ export class AssetFactory {
     doorMesh.material = doorMat; doorMesh.position.set(doorW / 2, doorH / 2, 0);
     doorMesh.parent = doorPivot; doorMesh.checkCollisions = true;
 
-    const handleMat = mat(scene, 0.75, 0.7, 0.3);
+    const handleMt = mat(scene, 0.75, 0.7, 0.3);
     const handle = CreateBox("handle", { width: 0.08, height: 0.08, depth: 0.1 }, scene);
-    handle.material = handleMat; handle.position.set(doorW * 0.35, doorH * 0.45, 0.06);
+    handle.material = handleMt; handle.position.set(doorW * 0.35, doorH * 0.45, 0.06);
     handle.parent = doorPivot;
 
-    // ── Floor slabs per level ──
+    // ── Floor slabs per level (with hole for elevator shaft) ──
+    const shaftW = 1.8;
+    const shaftD = 1.8;
+    const shaftX = -w / 2 + t + shaftW / 2 + 0.3;
+    const shaftZ = -d / 2 + t + shaftD / 2 + 0.3;
+
     for (let f = 0; f <= numFloors; f++) {
       const flY = f * floorH;
       if (flY > h) break;
       const fl = CreateBox(`floor${f}`, { width: w - t * 2, height: 0.1, depth: d - t * 2 }, scene);
-      fl.material = floorMat; fl.position.set(0, flY + 0.05, 0);
+      fl.material = floorMatl; fl.position.set(0, flY + 0.05, 0);
       fl.parent = root; fl.checkCollisions = true;
     }
 
     // Ceiling
     const ceil = CreateBox("ceil", { width: w - t * 2, height: 0.1, depth: d - t * 2 }, scene);
-    ceil.material = floorMat; ceil.position.set(0, h - 0.05, 0); ceil.parent = root;
+    ceil.material = floorMatl; ceil.position.set(0, h - 0.05, 0); ceil.parent = root;
 
-    // ── Windows (exterior decoration) ──
+    // ── Windows ──
     const cols = Math.max(1, Math.floor(w / 2));
     for (let fl = 0; fl < numFloors; fl++) {
       for (let col = 0; col < cols; col++) {
         const winX = -((cols - 1) * 1.5) / 2 + col * 1.5;
         const winY = fl * floorH + floorH * 0.55;
         if (winY > h - 1) continue;
-
         const wf = CreateBox(`wf${fl}_${col}`, { width: 0.6, height: 0.8, depth: 0.05 }, scene);
         wf.material = winMat; wf.position.set(winX, winY, d / 2 + 0.03); wf.parent = root;
-
         const wb = CreateBox(`wb${fl}_${col}`, { width: 0.6, height: 0.8, depth: 0.05 }, scene);
         wb.material = winMat; wb.position.set(winX, winY, -d / 2 - 0.03); wb.parent = root;
       }
     }
 
-    // ── Interior: Elevator shaft (back-left corner) ──
-    const shaftW = 1.8;
-    const shaftD = 1.8;
-    const shaftX = -w / 2 + t + shaftW / 2 + 0.3;
-    const shaftZ = -d / 2 + t + shaftD / 2 + 0.3;
+    // ── Elevator shaft (back-left corner) ──
+    // Shaft walls (3 sides, open toward front/center of building)
+    const swL = CreateBox("shaftWL", { width: 0.1, height: h, depth: shaftD }, scene);
+    swL.material = elevMat; swL.position.set(shaftX - shaftW / 2, h / 2, shaftZ);
+    swL.parent = root; swL.checkCollisions = true;
 
-    // Elevator shaft walls (partial - open front)
-    const shaftWallL = CreateBox("shaftWL", { width: 0.1, height: h, depth: shaftD }, scene);
-    shaftWallL.material = elevMat; shaftWallL.position.set(shaftX - shaftW / 2, h / 2, shaftZ);
-    shaftWallL.parent = root; shaftWallL.checkCollisions = true;
+    const swR = CreateBox("shaftWR", { width: 0.1, height: h, depth: shaftD }, scene);
+    swR.material = elevMat; swR.position.set(shaftX + shaftW / 2, h / 2, shaftZ);
+    swR.parent = root; swR.checkCollisions = true;
 
-    const shaftWallR = CreateBox("shaftWR", { width: 0.1, height: h, depth: shaftD }, scene);
-    shaftWallR.material = elevMat; shaftWallR.position.set(shaftX + shaftW / 2, h / 2, shaftZ);
-    shaftWallR.parent = root; shaftWallR.checkCollisions = true;
+    const swB = CreateBox("shaftWB", { width: shaftW, height: h, depth: 0.1 }, scene);
+    swB.material = elevMat; swB.position.set(shaftX, h / 2, shaftZ - shaftD / 2);
+    swB.parent = root; swB.checkCollisions = true;
 
-    const shaftWallB = CreateBox("shaftWB", { width: shaftW, height: h, depth: 0.1 }, scene);
-    shaftWallB.material = elevMat; shaftWallB.position.set(shaftX, h / 2, shaftZ - shaftD / 2);
-    shaftWallB.parent = root; shaftWallB.checkCollisions = true;
-
-    // Elevator platform (moves between floors conceptually – static for now at ground)
+    // Elevator platform (movable – NOT parented to root so it can be positioned in world space later)
     const elevPlatform = CreateBox("elevPlat", { width: shaftW - 0.2, height: 0.15, depth: shaftD - 0.2 }, scene);
-    elevPlatform.material = metalMat; elevPlatform.position.set(shaftX, 0.08, shaftZ);
-    elevPlatform.parent = root; elevPlatform.checkCollisions = true;
+    elevPlatform.material = metalMat;
+    elevPlatform.position.set(shaftX, 0.08, shaftZ);
+    elevPlatform.parent = root;
+    elevPlatform.checkCollisions = true;
 
-    // Floor indicator buttons at each level (decorative)
+    // Elevator call buttons (yellow) at each floor – near shaft opening
+    const btnMat = mat(scene, 0.9, 0.8, 0.2);
     for (let f = 0; f < numFloors; f++) {
       const btnY = f * floorH + 1.2;
       const btn = CreateBox(`elevBtn${f}`, { width: 0.15, height: 0.15, depth: 0.05 }, scene);
-      btn.material = mat(scene, 0.9, 0.8, 0.2);
+      btn.material = btnMat;
       btn.position.set(shaftX + shaftW / 2 + 0.08, btnY, shaftZ + shaftD / 2 - 0.3);
       btn.parent = root;
     }
 
-    // ── Exterior: Fire escape stairs (right side) ──
-    const stairW = 1.6;
-    const stairD = 2.5;
-    const stairX = w / 2 + stairW / 2 + 0.1;
-    const stairZ = 0;
-    const stepsPerFloor = 10;
+    // ── Exterior: Fire escape stairs (switchback design on right side) ──
+    const stairW = 1.8;     // width of stair platform
+    const stairDepth = 3.0; // total Z extent of the staircase
+    const stairX = w / 2 + stairW / 2 + 0.15; // offset from building wall
+    const stairCenterZ = 0;
+    const halfZ = stairDepth / 2;
+    const stepsPerFlight = 6; // steps per half-floor
+    const stepDepthEach = 0.45; // depth of each step (walkable!)
+    const stepHeight = floorH / (stepsPerFlight * 2); // height per step
 
     for (let f = 0; f < numFloors; f++) {
       const baseY = f * floorH;
 
-      // Landing platform at each floor level
-      const landing = CreateBox(`landing${f}`, { width: stairW, height: 0.12, depth: stairD * 0.4 }, scene);
-      landing.material = metalMat;
-      landing.position.set(stairX, baseY + 0.06, stairZ - stairD * 0.3);
-      landing.parent = root; landing.checkCollisions = true; landing.receiveShadows = true;
+      // Lower landing (at floor level, front side)
+      const lowerLand = CreateBox(`landLow${f}`, { width: stairW, height: 0.15, depth: 1.4 }, scene);
+      lowerLand.material = metalMat;
+      lowerLand.position.set(stairX, baseY + 0.075, stairCenterZ - halfZ + 0.7);
+      lowerLand.parent = root; lowerLand.checkCollisions = true; lowerLand.receiveShadows = true;
 
-      // Steps going up to next floor
-      const stepH = floorH / stepsPerFloor;
-      const stepD = (stairD * 0.6) / stepsPerFloor;
-      for (let s = 0; s < stepsPerFloor; s++) {
-        const step = CreateBox(`step${f}_${s}`, { width: stairW * 0.9, height: 0.08, depth: stepD * 0.9 }, scene);
+      // First flight: front→back, rising to mid-level
+      for (let s = 0; s < stepsPerFlight; s++) {
+        const sy = baseY + stepHeight * (s + 1);
+        const sz = stairCenterZ - halfZ + 1.4 + stepDepthEach * s;
+        const step = CreateBox(`stepA${f}_${s}`, { width: stairW - 0.1, height: 0.12, depth: stepDepthEach - 0.02 }, scene);
         step.material = metalMat;
-        const sy = baseY + stepH * (s + 1);
-        // Alternate direction each floor
-        const sz = (f % 2 === 0)
-          ? stairZ - stairD * 0.3 + stairD * 0.4 * 0.5 + stepD * s
-          : stairZ + stairD * 0.3 - stairD * 0.4 * 0.5 - stepD * s;
         step.position.set(stairX, sy, sz);
         step.parent = root; step.checkCollisions = true;
       }
 
-      // Railing (outer side)
-      const railOuter = CreateBox(`railO${f}`, { width: 0.06, height: floorH, depth: stairD }, scene);
-      railOuter.material = railMat;
-      railOuter.position.set(stairX + stairW / 2, baseY + floorH / 2, stairZ);
-      railOuter.parent = root; railOuter.checkCollisions = true;
+      // Mid landing (at half-floor height, back side)
+      const midY = baseY + floorH / 2;
+      const midLand = CreateBox(`landMid${f}`, { width: stairW, height: 0.15, depth: 1.4 }, scene);
+      midLand.material = metalMat;
+      midLand.position.set(stairX, midY + 0.075, stairCenterZ + halfZ - 0.7);
+      midLand.parent = root; midLand.checkCollisions = true; midLand.receiveShadows = true;
 
-      // Railing (inner side – along building wall)
-      const railInner = CreateBox(`railI${f}`, { width: 0.06, height: floorH, depth: stairD }, scene);
-      railInner.material = railMat;
-      railInner.position.set(stairX - stairW / 2, baseY + floorH / 2, stairZ);
-      railInner.parent = root;
+      // Second flight: back→front, rising to next floor
+      for (let s = 0; s < stepsPerFlight; s++) {
+        const sy = midY + stepHeight * (s + 1);
+        const sz = stairCenterZ + halfZ - 1.4 - stepDepthEach * s;
+        const step = CreateBox(`stepB${f}_${s}`, { width: stairW - 0.1, height: 0.12, depth: stepDepthEach - 0.02 }, scene);
+        step.material = metalMat;
+        step.position.set(stairX, sy, sz);
+        step.parent = root; step.checkCollisions = true;
+      }
+
+      // Railings (outer edge for entire floor section)
+      const railH = floorH + 0.3;
+      const railOut = CreateBox(`railO${f}`, { width: 0.06, height: railH, depth: stairDepth + 0.2 }, scene);
+      railOut.material = railMat;
+      railOut.position.set(stairX + stairW / 2, baseY + railH / 2, stairCenterZ);
+      railOut.parent = root; railOut.checkCollisions = true;
+
+      // Front railing
+      const railFront = CreateBox(`railF${f}`, { width: stairW, height: 1.0, depth: 0.06 }, scene);
+      railFront.material = railMat;
+      railFront.position.set(stairX, baseY + 0.5, stairCenterZ - halfZ);
+      railFront.parent = root;
+
+      // Back railing
+      const railBack = CreateBox(`railB${f}`, { width: stairW, height: 1.0, depth: 0.06 }, scene);
+      railBack.material = railMat;
+      railBack.position.set(stairX, midY + 0.5, stairCenterZ + halfZ);
+      railBack.parent = root;
     }
 
-    // Top landing
-    const topLanding = CreateBox("topLand", { width: stairW, height: 0.12, depth: stairD * 0.4 }, scene);
-    topLanding.material = metalMat;
-    topLanding.position.set(stairX, numFloors * floorH + 0.06, stairZ - stairD * 0.3);
-    topLanding.parent = root; topLanding.checkCollisions = true;
+    // Top landing (roof access)
+    const topY = numFloors * floorH;
+    const topLand = CreateBox("topLand", { width: stairW, height: 0.15, depth: 1.4 }, scene);
+    topLand.material = metalMat;
+    topLand.position.set(stairX, topY + 0.075, stairCenterZ - halfZ + 0.7);
+    topLand.parent = root; topLand.checkCollisions = true;
 
-    // Support columns for stairs
-    for (let i = 0; i < numFloors + 1; i++) {
-      const col = CreateCylinder(`stairCol${i}`, { height: h, diameter: 0.12, tessellation: 8 }, scene);
+    // Support columns (4 corners of stair structure)
+    const colPositions = [
+      [stairX - stairW / 2, stairCenterZ - halfZ],
+      [stairX + stairW / 2, stairCenterZ - halfZ],
+      [stairX - stairW / 2, stairCenterZ + halfZ],
+      [stairX + stairW / 2, stairCenterZ + halfZ],
+    ];
+    for (let i = 0; i < colPositions.length; i++) {
+      const [cx, cz] = colPositions[i];
+      const col = CreateCylinder(`stairCol${i}`, { height: h + 0.5, diameter: 0.1, tessellation: 8 }, scene);
       col.material = railMat;
-      col.position.set(stairX + stairW / 2, h / 2, stairZ + (i % 2 === 0 ? -1 : 1) * stairD / 2);
+      col.position.set(cx, (h + 0.5) / 2, cz);
       col.parent = root; col.checkCollisions = true;
     }
 
@@ -398,7 +429,7 @@ export class AssetFactory {
     const edge = CreateBox("edge", { width: w + 0.2, height: 0.3, depth: d + 0.2 }, scene);
     edge.material = darkMat; edge.position.y = h + 0.15; edge.parent = root;
 
-    return { root, doorPivot };
+    return { root, doorPivot, elevPlatform, elevShaftX: shaftX, elevShaftZ: shaftZ, floorH, numFloors };
   }
 
   /** Convenience store / shop */

@@ -5,6 +5,7 @@ import { Engine, ViewMode } from "../core/Engine";
 import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
 import { OpenWorld, DoorInfo, ElevatorInfo, BuildingBounds } from "../world/OpenWorld";
+import { Animal, AnimalKind } from "../entities/Animal";
 
 const CAMERA_SENSITIVITY = 0.012;
 const FPS_YAW_SENSITIVITY = 0.01;
@@ -19,6 +20,7 @@ export class OpenWorldScene {
   private input: InputManager;
   private player!: Player;
   private world!: OpenWorld;
+  private animals: Animal[] = [];
 
   // First-person camera state
   private fpsYaw = 0;
@@ -65,6 +67,9 @@ export class OpenWorldScene {
     this.player.mesh.getChildMeshes().forEach((m) => {
       this.engine.shadowGenerator.addShadowCaster(m);
     });
+
+    // Spawn wandering animals
+    this.spawnAnimals(scene);
 
     // Transition camera (used during view switch animation)
     this.transitionCam = new UniversalCamera("transCam", Vector3.Zero(), this.engine.scene);
@@ -162,6 +167,31 @@ export class OpenWorldScene {
     }
   }
 
+  /* ---- Animals ---- */
+
+  private spawnAnimals(scene: import("@babylonjs/core/scene").Scene): void {
+    const sg = this.engine.shadowGenerator;
+    const spawns: { kind: AnimalKind; x: number; z: number }[] = [
+      // Cats (scattered near houses/roads)
+      { kind: "cat", x: 12, z: 8 },
+      { kind: "cat", x: -14, z: 12 },
+      { kind: "cat", x: 18, z: -8 },
+      { kind: "cat", x: -20, z: -14 },
+      { kind: "cat", x: 5, z: 30 },
+      { kind: "cat", x: -8, z: -30 },
+      // Elephants (outer areas near hills)
+      { kind: "elephant", x: 55, z: 25 },
+      { kind: "elephant", x: -55, z: -30 },
+      // Lions (roaming open areas)
+      { kind: "lion", x: 35, z: 40 },
+      { kind: "lion", x: -35, z: -40 },
+      { kind: "lion", x: 50, z: -15 },
+    ];
+    for (const s of spawns) {
+      this.animals.push(new Animal(scene, s.kind, s.x, s.z, sg));
+    }
+  }
+
   /* ---- View toggle / camera transition ---- */
 
   private toggleView(): void {
@@ -208,9 +238,10 @@ export class OpenWorldScene {
   /* ---- Main update ---- */
 
   private update(dt: number): void {
-    // Animate doors and elevators every frame
+    // Animate doors, elevators, and animals every frame
     this.animateDoors(dt);
     this.animateElevators(dt);
+    for (const a of this.animals) a.update(dt);
 
     // Player movement (pass camera alpha for third-person input rotation)
     this.player.update(dt, this.engine.viewMode, this.fpsYaw, this.engine.thirdPersonCam.alpha);

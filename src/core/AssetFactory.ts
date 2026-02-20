@@ -591,4 +591,183 @@ export class AssetFactory {
     road.position.y = 0.01;
     return road;
   }
+
+  /* ================================================================
+     Animals – box-style with 4-leg joints for walk animation
+     ================================================================ */
+
+  static createCat(scene: Scene): AnimalMesh {
+    const root = new TransformNode("cat", scene);
+    const bodyMat = mat(scene, 0.3, 0.3, 0.32);   // dark gray
+    const noseMat = mat(scene, 0.85, 0.55, 0.55);
+    const earMat  = mat(scene, 0.4, 0.35, 0.35);
+    const eyeM    = mat(scene, 0.15, 0.6, 0.15);   // green eyes
+    const tailMat = bodyMat;
+
+    const bodyH = 0.35;
+    // Body
+    const body = CreateBox("catBody", { width: 0.25, height: 0.22, depth: 0.55 }, scene);
+    body.material = bodyMat; body.position.set(0, bodyH, 0); body.parent = root;
+
+    // Head
+    const head = CreateBox("catHead", { width: 0.22, height: 0.2, depth: 0.2 }, scene);
+    head.material = bodyMat; head.position.set(0, bodyH + 0.12, 0.32); head.parent = root;
+
+    // Ears
+    const earL = CreateBox("catEarL", { width: 0.06, height: 0.1, depth: 0.06 }, scene);
+    earL.material = earMat; earL.position.set(-0.07, bodyH + 0.26, 0.32); earL.parent = root;
+    const earR = CreateBox("catEarR", { width: 0.06, height: 0.1, depth: 0.06 }, scene);
+    earR.material = earMat; earR.position.set(0.07, bodyH + 0.26, 0.32); earR.parent = root;
+
+    // Eyes
+    const eyeL = CreateSphere("catEyeL", { diameter: 0.05, segments: 6 }, scene);
+    eyeL.material = eyeM; eyeL.position.set(-0.06, bodyH + 0.16, 0.42); eyeL.parent = root;
+    const eyeR = CreateSphere("catEyeR", { diameter: 0.05, segments: 6 }, scene);
+    eyeR.material = eyeM; eyeR.position.set(0.06, bodyH + 0.16, 0.42); eyeR.parent = root;
+
+    // Nose
+    const nose = CreateBox("catNose", { width: 0.04, height: 0.03, depth: 0.03 }, scene);
+    nose.material = noseMat; nose.position.set(0, bodyH + 0.1, 0.43); nose.parent = root;
+
+    // Tail
+    const tail = CreateBox("catTail", { width: 0.04, height: 0.04, depth: 0.35 }, scene);
+    tail.material = tailMat; tail.position.set(0, bodyH + 0.1, -0.4); tail.rotation.x = -0.3;
+    tail.parent = root;
+
+    // Legs with joints
+    const legH = 0.22; const legW = 0.07;
+    const legs = AssetFactory.makeQuadLegs(scene, root, bodyMat, 0.09, bodyH - 0.08, 0.18, legW, legH);
+
+    return { root, ...legs, eyeHeight: bodyH + 0.2 };
+  }
+
+  static createElephant(scene: Scene): AnimalMesh {
+    const root = new TransformNode("elephant", scene);
+    const grayMat  = mat(scene, 0.55, 0.55, 0.56);
+    const darkMat  = mat(scene, 0.4, 0.4, 0.42);
+    const eyeM     = mat(scene, 0.15, 0.12, 0.1);
+    const tuskMat  = mat(scene, 0.92, 0.9, 0.82);
+
+    const bodyH = 1.3;
+    // Body (large)
+    const body = CreateBox("eleBody", { width: 1.2, height: 1.0, depth: 1.6 }, scene);
+    body.material = grayMat; body.position.set(0, bodyH, 0); body.parent = root;
+
+    // Head
+    const head = CreateBox("eleHead", { width: 0.7, height: 0.65, depth: 0.6 }, scene);
+    head.material = grayMat; head.position.set(0, bodyH + 0.35, 0.9); head.parent = root;
+
+    // Trunk
+    const trunk = CreateCylinder("eleTrunk", { height: 0.9, diameterTop: 0.12, diameterBottom: 0.22, tessellation: 8 }, scene);
+    trunk.material = darkMat; trunk.rotation.x = 0.4;
+    trunk.position.set(0, bodyH - 0.05, 1.25); trunk.parent = root;
+
+    // Ears (flat wide)
+    const earL = CreateBox("eleEarL", { width: 0.45, height: 0.5, depth: 0.06 }, scene);
+    earL.material = darkMat; earL.position.set(-0.55, bodyH + 0.35, 0.75); earL.parent = root;
+    const earR = CreateBox("eleEarR", { width: 0.45, height: 0.5, depth: 0.06 }, scene);
+    earR.material = darkMat; earR.position.set(0.55, bodyH + 0.35, 0.75); earR.parent = root;
+
+    // Eyes
+    const eyeL = CreateSphere("eleEyeL", { diameter: 0.1, segments: 6 }, scene);
+    eyeL.material = eyeM; eyeL.position.set(-0.28, bodyH + 0.5, 1.15); eyeL.parent = root;
+    const eyeR = CreateSphere("eleEyeR", { diameter: 0.1, segments: 6 }, scene);
+    eyeR.material = eyeM; eyeR.position.set(0.28, bodyH + 0.5, 1.15); eyeR.parent = root;
+
+    // Tusks
+    const tuskL = CreateCylinder("tuskL", { height: 0.5, diameterTop: 0.04, diameterBottom: 0.08, tessellation: 6 }, scene);
+    tuskL.material = tuskMat; tuskL.rotation.x = 0.5;
+    tuskL.position.set(-0.2, bodyH - 0.05, 1.2); tuskL.parent = root;
+    const tuskR = CreateCylinder("tuskR", { height: 0.5, diameterTop: 0.04, diameterBottom: 0.08, tessellation: 6 }, scene);
+    tuskR.material = tuskMat; tuskR.rotation.x = 0.5;
+    tuskR.position.set(0.2, bodyH - 0.05, 1.2); tuskR.parent = root;
+
+    // Tail
+    const tail = CreateCylinder("eleTail", { height: 0.6, diameterTop: 0.03, diameterBottom: 0.06, tessellation: 6 }, scene);
+    tail.material = darkMat; tail.rotation.x = -0.6;
+    tail.position.set(0, bodyH + 0.15, -0.85); tail.parent = root;
+
+    // Legs – thick columns
+    const legH = 0.75; const legW = 0.2;
+    const legs = AssetFactory.makeQuadLegs(scene, root, grayMat, 0.4, bodyH - 0.45, 0.5, legW, legH);
+
+    return { root, ...legs, eyeHeight: bodyH + 0.5 };
+  }
+
+  static createLion(scene: Scene): AnimalMesh {
+    const root = new TransformNode("lion", scene);
+    const furMat   = mat(scene, 0.78, 0.6, 0.3);
+    const maneMat  = mat(scene, 0.6, 0.4, 0.15);
+    const noseMat  = mat(scene, 0.3, 0.2, 0.15);
+    const eyeM     = mat(scene, 0.55, 0.45, 0.15);
+    const tailMat  = furMat;
+
+    const bodyH = 0.7;
+    // Body
+    const body = CreateBox("lionBody", { width: 0.5, height: 0.45, depth: 0.9 }, scene);
+    body.material = furMat; body.position.set(0, bodyH, 0); body.parent = root;
+
+    // Head
+    const head = CreateBox("lionHead", { width: 0.38, height: 0.35, depth: 0.32 }, scene);
+    head.material = furMat; head.position.set(0, bodyH + 0.2, 0.5); head.parent = root;
+
+    // Mane (larger box behind head)
+    const mane = CreateSphere("lionMane", { diameterX: 0.6, diameterY: 0.55, diameterZ: 0.45, segments: 8 }, scene);
+    mane.material = maneMat; mane.position.set(0, bodyH + 0.22, 0.4); mane.parent = root;
+
+    // Eyes
+    const eyeL = CreateSphere("lionEyeL", { diameter: 0.06, segments: 6 }, scene);
+    eyeL.material = eyeM; eyeL.position.set(-0.1, bodyH + 0.28, 0.65); eyeL.parent = root;
+    const eyeR = CreateSphere("lionEyeR", { diameter: 0.06, segments: 6 }, scene);
+    eyeR.material = eyeM; eyeR.position.set(0.1, bodyH + 0.28, 0.65); eyeR.parent = root;
+
+    // Nose
+    const nose = CreateBox("lionNose", { width: 0.08, height: 0.05, depth: 0.05 }, scene);
+    nose.material = noseMat; nose.position.set(0, bodyH + 0.18, 0.67); nose.parent = root;
+
+    // Tail
+    const tail = CreateBox("lionTail", { width: 0.05, height: 0.05, depth: 0.5 }, scene);
+    tail.material = tailMat; tail.position.set(0, bodyH + 0.15, -0.65); tail.rotation.x = -0.2;
+    tail.parent = root;
+    // Tail tuft
+    const tuft = CreateSphere("lionTuft", { diameter: 0.1, segments: 6 }, scene);
+    tuft.material = maneMat; tuft.position.set(0, bodyH + 0.2, -0.88); tuft.parent = root;
+
+    // Legs
+    const legH = 0.4; const legW = 0.1;
+    const legs = AssetFactory.makeQuadLegs(scene, root, furMat, 0.18, bodyH - 0.2, 0.3, legW, legH);
+
+    return { root, ...legs, eyeHeight: bodyH + 0.3 };
+  }
+
+  /** Helper: create 4 leg joints for quadruped animals */
+  private static makeQuadLegs(
+    scene: Scene, root: TransformNode, legMat: StandardMaterial,
+    halfSpreadX: number, jointY: number, halfSpreadZ: number,
+    legW: number, legH: number,
+  ): { fl: TransformNode; fr: TransformNode; bl: TransformNode; br: TransformNode } {
+    const make = (name: string, x: number, z: number) => {
+      const joint = new TransformNode(name, scene);
+      joint.position.set(x, jointY, z);
+      joint.parent = root;
+      const leg = CreateBox(name + "Mesh", { width: legW, height: legH, depth: legW }, scene);
+      leg.material = legMat;
+      leg.position.set(0, -legH / 2, 0);
+      leg.parent = joint;
+      return joint;
+    };
+    return {
+      fl: make("legFL", -halfSpreadX, halfSpreadZ),
+      fr: make("legFR", halfSpreadX, halfSpreadZ),
+      bl: make("legBL", -halfSpreadX, -halfSpreadZ),
+      br: make("legBR", halfSpreadX, -halfSpreadZ),
+    };
+  }
+}
+
+export interface AnimalMesh {
+  root: TransformNode;
+  fl: TransformNode; fr: TransformNode;
+  bl: TransformNode; br: TransformNode;
+  eyeHeight: number;
 }

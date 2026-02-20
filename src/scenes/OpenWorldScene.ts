@@ -34,6 +34,7 @@ export class OpenWorldScene {
   // UI
   private viewToggleBtn!: HTMLButtonElement;
   private actionBtn!: HTMLButtonElement;
+  private jumpBtn!: HTMLButtonElement;
   private nearDoor = false;
 
   constructor(engine: Engine, input: InputManager) {
@@ -68,11 +69,11 @@ export class OpenWorldScene {
   }
 
   private createUI(): void {
-    // View toggle button (bottom-right)
+    // View toggle button (top-right)
     this.viewToggleBtn = document.createElement("button");
     this.viewToggleBtn.textContent = "1P";
     this.viewToggleBtn.style.cssText =
-      "position:fixed;right:24px;bottom:24px;width:56px;height:56px;" +
+      "position:fixed;right:24px;top:24px;width:56px;height:56px;" +
       "border-radius:50%;border:2px solid rgba(255,255,255,0.25);" +
       "background:rgba(0,0,0,0.4);color:#fff;font-size:16px;font-weight:bold;" +
       "cursor:pointer;z-index:25;-webkit-tap-highlight-color:transparent;" +
@@ -82,7 +83,7 @@ export class OpenWorldScene {
     this.viewToggleBtn.addEventListener("touchstart", (e) => e.stopPropagation());
     document.body.appendChild(this.viewToggleBtn);
 
-    // Action button (above view toggle)
+    // Action button (bottom-right)
     this.actionBtn = document.createElement("button");
     this.actionBtn.textContent = "A";
     this.actionBtn.style.cssText =
@@ -96,6 +97,20 @@ export class OpenWorldScene {
     this.actionBtn.addEventListener("click", () => this.tryInteract());
     this.actionBtn.addEventListener("touchstart", (e) => e.stopPropagation());
     document.body.appendChild(this.actionBtn);
+
+    // Jump button (below action button)
+    this.jumpBtn = document.createElement("button");
+    this.jumpBtn.textContent = "J";
+    this.jumpBtn.style.cssText =
+      "position:fixed;right:24px;bottom:24px;width:56px;height:56px;" +
+      "border-radius:50%;border:2px solid rgba(255,255,255,0.25);" +
+      "background:rgba(0,0,0,0.4);color:#fff;font-size:20px;font-weight:bold;" +
+      "cursor:pointer;z-index:25;-webkit-tap-highlight-color:transparent;" +
+      "display:flex;align-items:center;justify-content:center;" +
+      "backdrop-filter:blur(4px);transition:background 0.15s;";
+    this.jumpBtn.addEventListener("click", () => this.player.jump());
+    this.jumpBtn.addEventListener("touchstart", (e) => e.stopPropagation());
+    document.body.appendChild(this.jumpBtn);
   }
 
   /* ---- View toggle / camera transition ---- */
@@ -200,18 +215,18 @@ export class OpenWorldScene {
 
   private computeTransitionEnd(pos: Vector3): { endPos: Vector3; endTarget: Vector3; endFov: number } {
     if (this.transTargetMode === "first") {
-      const headPos = new Vector3(pos.x, 1.4, pos.z);
+      const headPos = new Vector3(pos.x, pos.y + 1.4, pos.z);
       const lookX = Math.sin(this.fpsYaw) * Math.cos(this.fpsPitch);
       const lookY = Math.sin(this.fpsPitch);
       const lookZ = Math.cos(this.fpsYaw) * Math.cos(this.fpsPitch);
       return {
         endPos: headPos,
-        endTarget: new Vector3(pos.x + lookX, 1.4 + lookY, pos.z + lookZ),
+        endTarget: new Vector3(pos.x + lookX, pos.y + 1.4 + lookY, pos.z + lookZ),
         endFov: this.engine.firstPersonCam.fov,
       };
     } else {
       const cam = this.engine.thirdPersonCam;
-      const target = new Vector3(pos.x, 1, pos.z);
+      const target = new Vector3(pos.x, pos.y + 1, pos.z);
       cam.target.copyFrom(target);
       const endPos = new Vector3(
         target.x + cam.radius * Math.cos(cam.alpha) * Math.sin(cam.beta),
@@ -299,7 +314,7 @@ export class OpenWorldScene {
       cam.beta = Math.max(cam.lowerBetaLimit ?? 0.3, Math.min(cam.upperBetaLimit ?? Math.PI / 2.5, cam.beta));
     }
 
-    cam.target.set(pos.x, 1, pos.z);
+    cam.target.set(pos.x, pos.y + 1, pos.z);
   }
 
   private updateFirstPerson(camDelta: { dx: number; dy: number }, pos: Vector3): void {
@@ -307,14 +322,14 @@ export class OpenWorldScene {
 
     // Rotate camera from drag
     if (camDelta.dx !== 0 || camDelta.dy !== 0) {
-      this.fpsYaw -= camDelta.dx * FPS_YAW_SENSITIVITY;
+      this.fpsYaw += camDelta.dx * FPS_YAW_SENSITIVITY;
       this.fpsPitch -= camDelta.dy * FPS_PITCH_SENSITIVITY;
       // Clamp pitch
       this.fpsPitch = Math.max(-1.2, Math.min(1.2, this.fpsPitch));
     }
 
-    // Position camera at player head
-    cam.position.set(pos.x, 1.4, pos.z);
+    // Position camera at player head (accounts for jump height)
+    cam.position.set(pos.x, pos.y + 1.4, pos.z);
 
     // Look direction from yaw + pitch
     const lookX = Math.sin(this.fpsYaw) * Math.cos(this.fpsPitch);
@@ -322,7 +337,7 @@ export class OpenWorldScene {
     const lookZ = Math.cos(this.fpsYaw) * Math.cos(this.fpsPitch);
     cam.setTarget(new Vector3(
       pos.x + lookX,
-      1.4 + lookY,
+      pos.y + 1.4 + lookY,
       pos.z + lookZ
     ));
   }

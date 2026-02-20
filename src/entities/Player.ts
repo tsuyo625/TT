@@ -15,6 +15,12 @@ export class Player {
   private readonly input: InputManager;
   private targetRotation = 0;
 
+  // Jump / gravity
+  private velocityY = 0;
+  private readonly gravity = -20;
+  private readonly jumpForce = 8;
+  private isGrounded = true;
+
   constructor(scene: Scene, input: InputManager, color: Color3, x: number, z: number) {
     this.input = input;
     this.mesh = AssetFactory.createCharacter(scene, color);
@@ -54,12 +60,32 @@ export class Player {
         vz = (inputX * sinA + inputZ * cosA) * speed;
       }
 
-      // Move with collision detection
+      // Move with collision detection (horizontal)
       this.collider.moveWithCollisions(new Vector3(vx, 0, vz));
       this.mesh.position.x = this.collider.position.x;
       this.mesh.position.z = this.collider.position.z;
 
       this.targetRotation = Math.atan2(vx, vz);
+    }
+
+    // Gravity & jump (vertical)
+    this.velocityY += this.gravity * dt;
+    const prevY = this.collider.position.y;
+    this.collider.moveWithCollisions(new Vector3(0, this.velocityY * dt, 0));
+    this.mesh.position.y = this.collider.position.y;
+
+    // Ground detection: if vertical movement was blocked (or on ground)
+    if (this.collider.position.y <= 0) {
+      this.collider.position.y = 0;
+      this.mesh.position.y = 0;
+      this.velocityY = 0;
+      this.isGrounded = true;
+    } else if (Math.abs(this.collider.position.y - prevY) < Math.abs(this.velocityY * dt) * 0.5 && this.velocityY < 0) {
+      // Hit something below (collision stopped the fall)
+      this.velocityY = 0;
+      this.isGrounded = true;
+    } else {
+      this.isGrounded = false;
     }
 
     // Smooth rotation
@@ -68,6 +94,13 @@ export class Player {
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     this.mesh.rotation.y += diff * Math.min(1, dt * 10);
+  }
+
+  jump(): void {
+    if (this.isGrounded) {
+      this.velocityY = this.jumpForce;
+      this.isGrounded = false;
+    }
   }
 
   getPosition(): Vector3 {

@@ -17,6 +17,13 @@ export interface DoorInfo {
   currentAngle: number;
 }
 
+/** Axis-aligned bounding box for indoor detection (world-space) */
+export interface BuildingBounds {
+  minX: number; maxX: number;
+  minZ: number; maxZ: number;
+  maxY: number;
+}
+
 export interface ElevatorInfo {
   platform: Mesh;
   /** world-space position of the elevator shaft center */
@@ -39,6 +46,7 @@ function mat(scene: Scene, r: number, g: number, b: number): StandardMaterial {
 export class OpenWorld {
   readonly doors: DoorInfo[] = [];
   readonly elevators: ElevatorInfo[] = [];
+  readonly buildingBounds: BuildingBounds[] = [];
 
   constructor(scene: Scene, shadowGen: ShadowGenerator) {
     this.buildGround(scene);
@@ -386,6 +394,11 @@ export class OpenWorld {
       house.rotation.y = h.ry;
       house.getChildMeshes().forEach((m) => shadowGen.addShadowCaster(m));
       this.doors.push({ pivot: doorPivot, isOpen: false, currentAngle: 0 });
+      this.buildingBounds.push({
+        minX: h.x - h.w / 2, maxX: h.x + h.w / 2,
+        minZ: h.z - h.d / 2, maxZ: h.z + h.d / 2,
+        maxY: h.h,
+      });
     }
   }
 
@@ -421,6 +434,12 @@ export class OpenWorld {
         targetFloor: 0,
         currentY: 0.08,
         moving: false,
+      });
+
+      this.buildingBounds.push({
+        minX: b.x - b.w / 2, maxX: b.x + b.w / 2,
+        minZ: b.z - b.d / 2, maxZ: b.z + b.d / 2,
+        maxY: b.h,
       });
     }
   }

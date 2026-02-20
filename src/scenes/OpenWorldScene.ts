@@ -4,11 +4,11 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Engine, ViewMode } from "../core/Engine";
 import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
-import { OpenWorld, DoorInfo, ElevatorInfo } from "../world/OpenWorld";
+import { OpenWorld, DoorInfo, ElevatorInfo, BuildingBounds } from "../world/OpenWorld";
 
-const CAMERA_SENSITIVITY = 0.005;
-const FPS_YAW_SENSITIVITY = 0.004;
-const FPS_PITCH_SENSITIVITY = 0.003;
+const CAMERA_SENSITIVITY = 0.012;
+const FPS_YAW_SENSITIVITY = 0.01;
+const FPS_PITCH_SENSITIVITY = 0.008;
 const TRANSITION_DURATION = 0.5;
 const DOOR_INTERACT_RANGE = 3;
 const ELEVATOR_INTERACT_RANGE = 2.5;
@@ -32,6 +32,9 @@ export class OpenWorldScene {
   private transStartTarget = Vector3.Zero();
   private transStartFov = 0.8;
   private transTargetMode: ViewMode = "third";
+
+  // Indoor detection
+  private wasIndoors = false;
 
   // UI
   private viewToggleBtn!: HTMLButtonElement;
@@ -173,6 +176,9 @@ export class OpenWorldScene {
 
     // Update action button hint
     this.updateActionHint(pos);
+
+    // Auto-switch to first-person when entering a building
+    this.checkIndoorAutoFPV(pos);
 
     if (this.isTransitioning) {
       this.updateTransition(dt, pos);
@@ -364,6 +370,27 @@ export class OpenWorldScene {
         ? "rgba(100,200,255,0.7)"
         : "rgba(255,255,255,0.25)";
     }
+  }
+
+  /* ---- Indoor detection / auto-FPV ---- */
+
+  private isPlayerIndoors(pos: Vector3): boolean {
+    for (const b of this.world.buildingBounds) {
+      if (pos.x >= b.minX && pos.x <= b.maxX &&
+          pos.z >= b.minZ && pos.z <= b.maxZ &&
+          pos.y < b.maxY) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private checkIndoorAutoFPV(pos: Vector3): void {
+    const indoors = this.isPlayerIndoors(pos);
+    if (indoors && !this.wasIndoors && this.engine.viewMode === "third" && !this.isTransitioning) {
+      this.toggleView(); // switches to first-person
+    }
+    this.wasIndoors = indoors;
   }
 
   /* ---- Camera updates ---- */

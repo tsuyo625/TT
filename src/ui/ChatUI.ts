@@ -132,28 +132,25 @@ export class ChatUI {
   }
 
   /** Display a chat message */
-  addMessage(playerId: string, message: string, timestamp: number): void {
-    const isLocal = playerId === this.localPlayerId;
-    const shortId = playerId.slice(0, 8);
-
+  addMessage(senderName: string, message: string, timestamp: number): void {
     // Create message element
     const element = document.createElement("div");
     element.style.cssText = `
       padding: 6px 10px;
       border-radius: 4px;
-      background: ${isLocal ? "rgba(74, 144, 217, 0.8)" : "rgba(0, 0, 0, 0.7)"};
+      background: rgba(0, 0, 0, 0.7);
       color: white;
       font-size: 13px;
       word-wrap: break-word;
       opacity: 1;
       transition: opacity 0.3s ease;
     `;
-    element.innerHTML = `<strong style="color: ${isLocal ? "#fff" : "#8bc"}">${isLocal ? "You" : shortId}:</strong> ${this.escapeHtml(message)}`;
+    element.innerHTML = `<strong style="color: #8bc">${this.escapeHtml(senderName)}:</strong> ${this.escapeHtml(message)}`;
 
     this.messagesContainer.appendChild(element);
 
     const chatMessage: ChatMessageDisplay = {
-      playerId,
+      playerId: senderName,
       message,
       timestamp,
       element,

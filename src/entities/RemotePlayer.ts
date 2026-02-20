@@ -20,6 +20,7 @@ const ANIM_RETURN_SPEED = 8;
 export class RemotePlayer {
   readonly mesh: TransformNode;
   readonly playerId: string;
+  private playerName: string = "";
 
   // Joint references for animation
   private leftShoulder: TransformNode;
@@ -182,6 +183,17 @@ export class RemotePlayer {
   /** Check if player data is stale */
   isStale(): boolean {
     return Date.now() - this.lastUpdate > STALE_TIMEOUT_MS;
+  }
+
+  /** Set player display name */
+  setName(name: string): void {
+    this.playerName = name;
+    // TODO: Add 3D name label above character
+  }
+
+  /** Get player display name */
+  getName(): string {
+    return this.playerName || this.playerId.slice(0, 8);
   }
 
   /** Cleanup */

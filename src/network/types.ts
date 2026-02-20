@@ -17,8 +17,9 @@ export interface RemotePlayerState {
 export type NetworkEvent =
   | { type: "connected"; localPlayerId: string }
   | { type: "disconnected"; reason: string }
-  | { type: "player_joined"; playerId: string }
+  | { type: "player_joined"; playerId: string; name?: string }
   | { type: "player_left"; playerId: string }
+  | { type: "player_name"; playerId: string; name: string }
   | {
       type: "state_update";
       players: Map<string, RemotePlayerState>;
@@ -86,14 +87,27 @@ export interface ErrorResponse {
 }
 
 // Broadcast messages from server (via unidirectional streams)
+export interface WelcomeBroadcast {
+  type: "welcome";
+  playerId: string;
+  serverTime: number;
+}
+
 export interface PlayerJoinedBroadcast {
   type: "player_joined";
   playerId: string;
+  name?: string;
 }
 
 export interface PlayerLeftBroadcast {
   type: "player_left";
   playerId: string;
+}
+
+export interface PlayerNameBroadcast {
+  type: "player_name";
+  playerId: string;
+  name: string;
 }
 
 export interface ChatBroadcast {
@@ -112,8 +126,10 @@ export interface ActionBroadcast {
 }
 
 export type IncomingBroadcast =
+  | WelcomeBroadcast
   | PlayerJoinedBroadcast
   | PlayerLeftBroadcast
+  | PlayerNameBroadcast
   | ChatBroadcast
   | ActionBroadcast;
 

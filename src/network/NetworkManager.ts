@@ -65,9 +65,9 @@ export class NetworkManager {
 
       this.connected = true;
       this.reconnectAttempt = 0;
-      this.localPlayerId = crypto.randomUUID();
+      // localPlayerId will be set by server's welcome message
 
-      console.log(`[Network] Connected! Local ID: ${this.localPlayerId}`);
+      console.log(`[Network] Transport ready, waiting for server welcome...`);
 
       // Open bidirectional stream for reliable messaging
       const bidiStream = await this.transport.createBidirectionalStream();
@@ -76,9 +76,6 @@ export class NetworkManager {
 
       // Get datagram writer for position updates
       this.datagramWriter = this.transport.datagrams.writable.getWriter();
-
-      // Emit connected event
-      this.onEvent?.({ type: "connected", localPlayerId: this.localPlayerId });
 
       // Start reading datagrams (state broadcasts)
       this.handleDatagrams();
@@ -199,6 +196,20 @@ export class NetworkManager {
     const data = JSON.stringify({
       type: "chat",
       message,
+      id: Date.now(),
+    });
+
+    const encoded = new TextEncoder().encode(data);
+    await this.bidiWriter.write(encoded);
+  }
+
+  /** Set player name via reliable stream */
+  async setName(name: string): Promise<void> {
+    if (!this.connected || !this.bidiWriter) return;
+
+    const data = JSON.stringify({
+      type: "set_name",
+      name,
       id: Date.now(),
     });
 
@@ -333,11 +344,28 @@ export class NetworkManager {
 
   private handleBroadcast(message: IncomingBroadcast): void {
     switch (message.type) {
+      case "welcome":
+        // Server assigned our ID
+        this.localPlayerId = message.playerId;
+        console.log(`[Network] Connected! Server assigned ID: ${this.localPlayerId}`);
+        this.onEvent?.({ type: "connected", localPlayerId: this.localPlayerId });
+        break;
       case "player_joined":
-        this.onEvent?.({ type: "player_joined", playerId: message.playerId });
+        this.onEvent?.({
+          type: "player_joined",
+          playerId: message.playerId,
+          name: message.name,
+        });
         break;
       case "player_left":
         this.onEvent?.({ type: "player_left", playerId: message.playerId });
+        break;
+      case "player_name":
+        this.onEvent?.({
+          type: "player_name",
+          playerId: message.playerId,
+          name: message.name,
+        });
         break;
       case "chat":
         this.onEvent?.({

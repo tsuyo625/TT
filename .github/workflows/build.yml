@@ -27,7 +27,6 @@ jobs:
           path: dist/
 
       - uses: actions/upload-pages-artifact@v3
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         with:
           path: dist/
 
@@ -50,7 +49,6 @@ jobs:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: build-web
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       pages: write
       id-token: write

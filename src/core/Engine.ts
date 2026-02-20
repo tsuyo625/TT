@@ -1,6 +1,7 @@
 import { Engine as BabylonEngine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
@@ -13,20 +14,30 @@ import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Meshes/meshBuilder";
 import "@babylonjs/core/Collisions/collisionCoordinator";
 
+export type ViewMode = "third" | "first";
+
 export class Engine {
   readonly engine: BabylonEngine;
   readonly scene: Scene;
-  readonly camera: ArcRotateCamera;
   readonly canvas: HTMLCanvasElement;
   readonly shadowGenerator: ShadowGenerator;
 
+  // Cameras
+  readonly thirdPersonCam: ArcRotateCamera;
+  readonly firstPersonCam: UniversalCamera;
+  private _viewMode: ViewMode = "third";
+
   private updateCallbacks: ((dt: number) => void)[] = [];
+
+  get viewMode(): ViewMode { return this._viewMode; }
+
+  get activeCamera(): ArcRotateCamera | UniversalCamera {
+    return this._viewMode === "third" ? this.thirdPersonCam : this.firstPersonCam;
+  }
 
   constructor(container: HTMLElement) {
     this.canvas = document.createElement("canvas");
-    this.canvas.style.width = "100%";
-    this.canvas.style.height = "100%";
-    this.canvas.style.display = "block";
+    this.canvas.style.cssText = "width:100%;height:100%;display:block;touch-action:none;";
     this.canvas.id = "renderCanvas";
     container.appendChild(this.canvas);
 
@@ -44,21 +55,35 @@ export class Engine {
     this.scene.fogEnd = 150;
     this.scene.collisionsEnabled = true;
 
-    // Third-person follow camera
-    this.camera = new ArcRotateCamera(
-      "camera",
+    // Third-person camera (ArcRotate)
+    this.thirdPersonCam = new ArcRotateCamera(
+      "thirdCam",
       -Math.PI / 2,
       Math.PI / 3.5,
       18,
       Vector3.Zero(),
       this.scene
     );
-    this.camera.lowerBetaLimit = 0.3;
-    this.camera.upperBetaLimit = Math.PI / 2.5;
-    this.camera.lowerRadiusLimit = 8;
-    this.camera.upperRadiusLimit = 35;
-    this.camera.attachControl(this.canvas, false);
-    this.camera.inputs.removeByType("ArcRotateCameraPointersInput");
+    this.thirdPersonCam.lowerBetaLimit = 0.3;
+    this.thirdPersonCam.upperBetaLimit = Math.PI / 2.5;
+    this.thirdPersonCam.lowerRadiusLimit = 6;
+    this.thirdPersonCam.upperRadiusLimit = 40;
+    // Disable all built-in pointer inputs (we handle camera via InputManager)
+    this.thirdPersonCam.inputs.clear();
+
+    // First-person camera
+    this.firstPersonCam = new UniversalCamera(
+      "firstCam",
+      new Vector3(0, 1.4, 0),
+      this.scene
+    );
+    this.firstPersonCam.minZ = 0.1;
+    this.firstPersonCam.fov = 1.2;
+    // Disable all built-in inputs
+    this.firstPersonCam.inputs.clear();
+
+    // Start with third-person
+    this.scene.activeCamera = this.thirdPersonCam;
 
     // Lighting
     const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), this.scene);
@@ -74,6 +99,11 @@ export class Engine {
     this.shadowGenerator.blurKernel = 32;
 
     window.addEventListener("resize", () => this.engine.resize());
+  }
+
+  setViewMode(mode: ViewMode): void {
+    this._viewMode = mode;
+    this.scene.activeCamera = mode === "third" ? this.thirdPersonCam : this.firstPersonCam;
   }
 
   onUpdate(cb: (dt: number) => void): void {

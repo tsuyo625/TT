@@ -6,8 +6,14 @@
     <title>Open World</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #1a1a2e; overflow: hidden; }
-      canvas { display: block; touch-action: none; }
+      html, body { width: 100%; height: 100%; background: #1a1a2e; overflow: hidden; }
+      body { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
+      canvas { display: block; width: 100% !important; height: 100% !important; touch-action: none; }
+
+      /* Safe area for notched phones */
+      @supports (padding: env(safe-area-inset-bottom)) {
+        body { padding-bottom: env(safe-area-inset-bottom); }
+      }
 
       /* Loading screen */
       #loading-screen {

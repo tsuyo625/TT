@@ -6,6 +6,7 @@ import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
 import { OpenWorld, DoorInfo, ElevatorInfo, BuildingBounds } from "../world/OpenWorld";
 import { Animal, AnimalKind } from "../entities/Animal";
+import { GiantCreature } from "../entities/GiantCreature";
 import { NetworkManager } from "../network/NetworkManager";
 import { RemotePlayer } from "../entities/RemotePlayer";
 import { NetworkEvent, RemotePlayerState } from "../network/types";
@@ -26,6 +27,7 @@ export class OpenWorldScene {
   private player!: Player;
   private world!: OpenWorld;
   private animals: Animal[] = [];
+  private giantCreature: GiantCreature | null = null;
 
   // Multiplayer
   private networkManager: NetworkManager | null = null;
@@ -360,6 +362,9 @@ export class OpenWorldScene {
     for (const s of spawns) {
       this.animals.push(new Animal(scene, s.kind, s.x, s.z, sg));
     }
+
+    // Spawn giant titan creature wandering the map
+    this.giantCreature = new GiantCreature(scene, -80, -80, sg);
   }
 
   /* ---- View toggle / camera transition ---- */
@@ -442,6 +447,7 @@ export class OpenWorldScene {
     this.animateDoors(dt);
     this.animateElevators(dt);
     for (const a of this.animals) a.update(dt);
+    this.giantCreature?.update(dt);
 
     // Player movement (pass camera alpha for third-person input rotation)
     this.player.update(dt, this.engine.viewMode, this.fpsYaw, this.engine.thirdPersonCam.alpha);

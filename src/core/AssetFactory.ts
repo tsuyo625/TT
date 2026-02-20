@@ -763,6 +763,193 @@ export class AssetFactory {
       br: make("legBR", halfSpreadX, -halfSpreadZ),
     };
   }
+
+  /** Create a massive titan creature (~40 units tall, 5x building size) */
+  static createTitan(scene: Scene): TitanMesh {
+    const root = new TransformNode("titan", scene);
+    const scale = 8; // Scale factor for massive size
+
+    // Dark rocky/ancient materials
+    const bodyMat = mat(scene, 0.25, 0.22, 0.28);
+    const armorMat = mat(scene, 0.35, 0.25, 0.2);
+    const glowMat = mat(scene, 0.9, 0.3, 0.1);
+    glowMat.emissiveColor = new Color3(0.9, 0.3, 0.1);
+    const eyeMat = mat(scene, 1, 0.2, 0.1);
+    eyeMat.emissiveColor = new Color3(1, 0.3, 0.1);
+
+    const bodyH = 3.0 * scale; // Body center height
+
+    // Massive body
+    const body = CreateBox("titanBody", {
+      width: 3.5 * scale,
+      height: 2.5 * scale,
+      depth: 5 * scale
+    }, scene);
+    body.material = bodyMat;
+    body.position.set(0, bodyH, 0);
+    body.parent = root;
+
+    // Armor plates on back
+    for (let i = 0; i < 5; i++) {
+      const plate = CreateBox("titanPlate" + i, {
+        width: 2.5 * scale,
+        height: 0.8 * scale,
+        depth: 0.6 * scale
+      }, scene);
+      plate.material = armorMat;
+      plate.position.set(0, bodyH + 1.5 * scale, -2 * scale + i * scale);
+      plate.rotation.x = 0.3;
+      plate.parent = root;
+    }
+
+    // Neck joint (for animation)
+    const neck = new TransformNode("titanNeck", scene);
+    neck.position.set(0, bodyH + 0.5 * scale, 2.5 * scale);
+    neck.parent = root;
+
+    // Long neck
+    const neckMesh = CreateCylinder("titanNeckMesh", {
+      height: 3 * scale,
+      diameterTop: 0.8 * scale,
+      diameterBottom: 1.5 * scale,
+      tessellation: 12
+    }, scene);
+    neckMesh.material = bodyMat;
+    neckMesh.rotation.x = -0.5;
+    neckMesh.position.set(0, 1.2 * scale, 0.8 * scale);
+    neckMesh.parent = neck;
+
+    // Head
+    const head = CreateBox("titanHead", {
+      width: 1.5 * scale,
+      height: 1.2 * scale,
+      depth: 2 * scale
+    }, scene);
+    head.material = armorMat;
+    head.position.set(0, 2.8 * scale, 2 * scale);
+    head.parent = neck;
+
+    // Horns
+    const hornL = CreateCylinder("titanHornL", {
+      height: 1.5 * scale,
+      diameterTop: 0.1 * scale,
+      diameterBottom: 0.3 * scale,
+      tessellation: 8
+    }, scene);
+    hornL.material = armorMat;
+    hornL.rotation.z = 0.4;
+    hornL.position.set(-0.6 * scale, 3.5 * scale, 1.5 * scale);
+    hornL.parent = neck;
+
+    const hornR = CreateCylinder("titanHornR", {
+      height: 1.5 * scale,
+      diameterTop: 0.1 * scale,
+      diameterBottom: 0.3 * scale,
+      tessellation: 8
+    }, scene);
+    hornR.material = armorMat;
+    hornR.rotation.z = -0.4;
+    hornR.position.set(0.6 * scale, 3.5 * scale, 1.5 * scale);
+    hornR.parent = neck;
+
+    // Glowing eyes
+    const eyeL = CreateSphere("titanEyeL", { diameter: 0.4 * scale, segments: 8 }, scene);
+    eyeL.material = eyeMat;
+    eyeL.position.set(-0.5 * scale, 3.1 * scale, 2.8 * scale);
+    eyeL.parent = neck;
+
+    const eyeR = CreateSphere("titanEyeR", { diameter: 0.4 * scale, segments: 8 }, scene);
+    eyeR.material = eyeMat;
+    eyeR.position.set(0.5 * scale, 3.1 * scale, 2.8 * scale);
+    eyeR.parent = neck;
+
+    // Tail joint (for animation)
+    const tail = new TransformNode("titanTail", scene);
+    tail.position.set(0, bodyH, -2.5 * scale);
+    tail.parent = root;
+
+    // Long segmented tail
+    for (let i = 0; i < 6; i++) {
+      const seg = CreateBox("titanTailSeg" + i, {
+        width: (1.2 - i * 0.15) * scale,
+        height: (0.8 - i * 0.1) * scale,
+        depth: 1.2 * scale
+      }, scene);
+      seg.material = i % 2 === 0 ? bodyMat : armorMat;
+      seg.position.set(0, -0.3 * i * scale, -1.2 * i * scale);
+      seg.parent = tail;
+    }
+
+    // Tail spike
+    const spike = CreateCylinder("titanSpike", {
+      height: 1.5 * scale,
+      diameterTop: 0.05 * scale,
+      diameterBottom: 0.4 * scale,
+      tessellation: 6
+    }, scene);
+    spike.material = armorMat;
+    spike.rotation.x = 1.2;
+    spike.position.set(0, -2 * scale, -7 * scale);
+    spike.parent = tail;
+
+    // Massive legs
+    const legH = 3 * scale;
+    const legW = 1 * scale;
+    const makeTitanLeg = (name: string, x: number, z: number) => {
+      const joint = new TransformNode(name, scene);
+      joint.position.set(x, bodyH - 1 * scale, z);
+      joint.parent = root;
+
+      // Upper leg
+      const upper = CreateBox(name + "Upper", {
+        width: legW,
+        height: legH * 0.6,
+        depth: legW * 1.2
+      }, scene);
+      upper.material = bodyMat;
+      upper.position.set(0, -legH * 0.3, 0);
+      upper.parent = joint;
+
+      // Lower leg
+      const lower = CreateBox(name + "Lower", {
+        width: legW * 0.8,
+        height: legH * 0.5,
+        depth: legW
+      }, scene);
+      lower.material = armorMat;
+      lower.position.set(0, -legH * 0.7, 0);
+      lower.parent = joint;
+
+      // Foot/claw
+      const foot = CreateBox(name + "Foot", {
+        width: legW * 1.5,
+        height: legW * 0.4,
+        depth: legW * 2
+      }, scene);
+      foot.material = armorMat;
+      foot.position.set(0, -legH, legW * 0.3);
+      foot.parent = joint;
+
+      return joint;
+    };
+
+    const fl = makeTitanLeg("titanLegFL", -1.5 * scale, 1.5 * scale);
+    const fr = makeTitanLeg("titanLegFR", 1.5 * scale, 1.5 * scale);
+    const bl = makeTitanLeg("titanLegBL", -1.5 * scale, -1.5 * scale);
+    const br = makeTitanLeg("titanLegBR", 1.5 * scale, -1.5 * scale);
+
+    // Glowing markings on body
+    const marking1 = CreateBox("titanMark1", {
+      width: 2 * scale,
+      height: 0.1 * scale,
+      depth: 3 * scale
+    }, scene);
+    marking1.material = glowMat;
+    marking1.position.set(0, bodyH + 1.3 * scale, 0);
+    marking1.parent = root;
+
+    return { root, fl, fr, bl, br, neck, tail };
+  }
 }
 
 export interface AnimalMesh {
@@ -770,4 +957,12 @@ export interface AnimalMesh {
   fl: TransformNode; fr: TransformNode;
   bl: TransformNode; br: TransformNode;
   eyeHeight: number;
+}
+
+export interface TitanMesh {
+  root: TransformNode;
+  fl: TransformNode; fr: TransformNode;
+  bl: TransformNode; br: TransformNode;
+  neck: TransformNode;
+  tail: TransformNode;
 }

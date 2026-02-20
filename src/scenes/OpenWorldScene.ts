@@ -99,7 +99,7 @@ export class OpenWorldScene {
 
   private getServerUrl(): string {
     const params = new URLSearchParams(window.location.search);
-    return params.get("server") || "https://localhost:4433/game";
+    return params.get("server") || "https://openworld-quic.fly.dev:443/game";
   }
 
   private initNetwork(): void {

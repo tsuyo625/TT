@@ -35,6 +35,17 @@ export class InputManager {
   onTap: (() => void) | null = null;
   private wasDrag = false;
 
+  // Keyboard
+  private keys = new Set<string>();
+  private _jumpRequest = false;
+  private _dashToggle = false;
+  private _interactRequest = false;
+  private _viewToggle = false;
+
+  // Pointer lock
+  private _pointerLocked = false;
+  private element: HTMLElement;
+
   // Joystick UI (fixed bottom-left)
   private joystickBase: HTMLDivElement;
   private joystickKnob: HTMLDivElement;
@@ -43,9 +54,11 @@ export class InputManager {
 
   get drag(): Readonly<DragState> { return this._drag; }
   get cameraDelta(): Readonly<CameraDelta> { return this._cameraDelta; }
+  get isPointerLocked(): boolean { return this._pointerLocked; }
 
   constructor(element: HTMLElement, maxRadius = 60) {
     this.maxRadius = maxRadius;
+    this.element = element;
 
     // Fixed joystick base - bottom left
     this.joystickBase = document.createElement("div");
@@ -65,16 +78,25 @@ export class InputManager {
     this.updateJoystickCenter();
     window.addEventListener("resize", () => this.updateJoystickCenter());
 
+    // Touch
     element.addEventListener("touchstart", this.onTouchStart, { passive: false });
     element.addEventListener("touchmove", this.onTouchMove, { passive: false });
     element.addEventListener("touchend", this.onTouchEnd, { passive: false });
     element.addEventListener("touchcancel", this.onTouchEnd, { passive: false });
+
+    // Mouse
     element.addEventListener("mousedown", this.onMouseDown);
     window.addEventListener("mousemove", this.onMouseMove);
     window.addEventListener("mouseup", this.onMouseUp);
-
-    // Prevent right-click menu for camera drag
     element.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    // Keyboard
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+
+    // Pointer lock (click canvas to lock mouse for camera control)
+    document.addEventListener("pointerlockchange", this.onPointerLockChange);
+    element.addEventListener("click", this.onCanvasClick);
   }
 
   private updateJoystickCenter(): void {
@@ -89,6 +111,68 @@ export class InputManager {
     const h = window.innerHeight;
     return x < w * JOYSTICK_ZONE_RATIO && y > h * (1 - JOYSTICK_ZONE_RATIO);
   }
+
+  // ── Pointer lock ──
+
+  private onCanvasClick = () => {
+    if (!this._pointerLocked) {
+      this.element.requestPointerLock();
+    }
+  };
+
+  private onPointerLockChange = () => {
+    this._pointerLocked = document.pointerLockElement === this.element;
+    this.joystickBase.style.display = this._pointerLocked ? "none" : "block";
+  };
+
+  // ── Keyboard ──
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    this.keys.add(e.code);
+    if (e.code === "Space") { this._jumpRequest = true; e.preventDefault(); }
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") this._dashToggle = true;
+    if (e.code === "KeyE") this._interactRequest = true;
+    if (e.code === "KeyV") this._viewToggle = true;
+  };
+
+  private onKeyUp = (e: KeyboardEvent) => {
+    this.keys.delete(e.code);
+  };
+
+  /** Call once per frame to synthesize drag from WASD/arrow keys */
+  tick(): void {
+    // Skip keyboard synthesis if touch/mouse joystick is active
+    if (this.joystickTouchId !== null || this.mouseJoystick) return;
+
+    const w = this.keys.has("KeyW") || this.keys.has("ArrowUp");
+    const s = this.keys.has("KeyS") || this.keys.has("ArrowDown");
+    const a = this.keys.has("KeyA") || this.keys.has("ArrowLeft");
+    const d = this.keys.has("KeyD") || this.keys.has("ArrowRight");
+
+    let kx = 0, ky = 0;
+    if (a) kx -= 1;
+    if (d) kx += 1;
+    if (w) ky -= 1; // up = negative Y (screen-space)
+    if (s) ky += 1;
+
+    const len = Math.sqrt(kx * kx + ky * ky);
+    if (len > 0) {
+      this._drag.active = true;
+      this._drag.dirX = kx / len;
+      this._drag.dirY = ky / len;
+      this._drag.magnitude = 1;
+    } else {
+      this._drag.active = false;
+      this._drag.magnitude = 0;
+      this._drag.dirX = 0;
+      this._drag.dirY = 0;
+    }
+  }
+
+  consumeJump(): boolean { const v = this._jumpRequest; this._jumpRequest = false; return v; }
+  consumeDashToggle(): boolean { const v = this._dashToggle; this._dashToggle = false; return v; }
+  consumeInteract(): boolean { const v = this._interactRequest; this._interactRequest = false; return v; }
+  consumeViewToggle(): boolean { const v = this._viewToggle; this._viewToggle = false; return v; }
 
   // ── Touch handlers ──
 
@@ -141,9 +225,10 @@ export class InputManager {
     }
   };
 
-  // ── Mouse handlers (left=joystick in zone, right=camera anywhere) ──
+  // ── Mouse handlers (pointer lock = camera, otherwise left=joystick/right=camera) ──
 
   private onMouseDown = (e: MouseEvent) => {
+    if (this._pointerLocked) return;
     if (e.button === 2 || (e.button === 0 && !this.isJoystickZone(e.clientX, e.clientY))) {
       // Right click or left click outside joystick zone → camera
       this.mouseCamera = true;
@@ -158,6 +243,13 @@ export class InputManager {
   };
 
   private onMouseMove = (e: MouseEvent) => {
+    // Pointer lock: accumulate mouse movement for camera
+    if (this._pointerLocked) {
+      this._cameraDelta.dx += e.movementX;
+      this._cameraDelta.dy += e.movementY;
+      return;
+    }
+
     this._cameraDelta.dx = 0;
     this._cameraDelta.dy = 0;
 
@@ -173,6 +265,7 @@ export class InputManager {
   };
 
   private onMouseUp = (e: MouseEvent) => {
+    if (this._pointerLocked) return;
     if (e.button === 0 && this.mouseJoystick) {
       this.mouseJoystick = false;
       this.endJoystick();

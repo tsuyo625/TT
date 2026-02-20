@@ -38,6 +38,9 @@ export class OpenWorldScene {
   // Indoor detection
   private wasIndoors = false;
 
+  // Pointer lock UI toggle
+  private wasPointerLocked = false;
+
   // UI
   private viewToggleBtn!: HTMLButtonElement;
   private actionBtn!: HTMLButtonElement;
@@ -45,6 +48,7 @@ export class OpenWorldScene {
   private dashBtn!: HTMLButtonElement;
   private dashGaugeCircle!: SVGCircleElement;
   private dashGaugeSvg!: SVGSVGElement;
+  private dashWrap!: HTMLDivElement;
   private nearDoor = false;
 
   constructor(engine: Engine, input: InputManager) {
@@ -113,6 +117,7 @@ export class OpenWorldScene {
 
     // Dash button with circular stamina gauge (above action button)
     const dashWrap = document.createElement("div");
+    this.dashWrap = dashWrap;
     dashWrap.style.cssText =
       "position:fixed;right:20px;bottom:164px;width:64px;height:64px;z-index:25;";
 
@@ -252,6 +257,25 @@ export class OpenWorldScene {
   /* ---- Main update ---- */
 
   private update(dt: number): void {
+    // Poll keyboard → synthesize drag from WASD
+    this.input.tick();
+
+    // Keyboard shortcuts
+    if (this.input.consumeJump()) this.player.jump();
+    if (this.input.consumeDashToggle()) this.toggleDash();
+    if (this.input.consumeInteract()) this.tryInteract();
+    if (this.input.consumeViewToggle()) this.toggleView();
+
+    // Hide/show mobile UI on pointer lock change
+    if (this.input.isPointerLocked !== this.wasPointerLocked) {
+      this.wasPointerLocked = this.input.isPointerLocked;
+      const d = this.input.isPointerLocked ? "none" : "";
+      this.viewToggleBtn.style.display = d;
+      this.actionBtn.style.display = d;
+      this.jumpBtn.style.display = d;
+      this.dashWrap.style.display = d;
+    }
+
     // Animate doors, elevators, and animals every frame
     this.animateDoors(dt);
     this.animateElevators(dt);

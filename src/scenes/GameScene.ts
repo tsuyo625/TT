@@ -7,7 +7,7 @@ import { DeathTracker } from "../systems/DeathTracker";
 import { EvolutionManager } from "../systems/EvolutionManager";
 import { LevelBuilder, type LevelObjects } from "../level/LevelBuilder";
 import { CHECKPOINTS, PLAYER_START } from "../level/LevelData";
-import { hitStop } from "../effects/HitStop";
+import { hitStop, physicsPause, physicsResume, resetPauseCount } from "../effects/HitStop";
 import { deathBurst, evolutionBurst } from "../effects/ParticleEffects";
 import type { DeathCause, EvolutionDefinition } from "../types";
 import {
@@ -41,13 +41,14 @@ export class GameScene extends Phaser.Scene {
     this.stageTimer = STAGE_TIME_LIMIT_SEC;
     this.isDead = false;
     this.hasWon = false;
+    resetPauseCount();
 
     this.deathTracker = new DeathTracker();
     this.evolutionManager = new EvolutionManager();
     this.inputManager = new InputManager(this);
 
-    // Projectile group for shooter enemies
-    this.projectileGroup = this.add.group();
+    // Projectile group for shooter enemies (physics group for proper collision)
+    this.projectileGroup = this.physics.add.group({ allowGravity: false });
 
     // Create player at start position
     const startX = PLAYER_START.tileX * TILE_SIZE + TILE_SIZE / 2;
@@ -248,8 +249,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private triggerEvolution(evo: EvolutionDefinition): void {
-    // Pause physics during evolution popup
-    this.physics.pause();
+    // Pause physics during evolution popup (reference-counted)
+    physicsPause(this);
 
     this.events.emit("evolution-granted", evo);
 
@@ -257,7 +258,7 @@ export class GameScene extends Phaser.Scene {
 
     this.time.delayedCall(2000, () => {
       this.player.applyEvolution(evo.type);
-      this.physics.resume();
+      physicsResume(this);
       this.respawn();
     });
   }
@@ -269,7 +270,7 @@ export class GameScene extends Phaser.Scene {
 
   private onWin(): void {
     this.hasWon = true;
-    this.physics.pause();
+    physicsPause(this);
     this.cameras.main.flash(400, 255, 215, 0);
 
     this.events.emit("stage-clear");

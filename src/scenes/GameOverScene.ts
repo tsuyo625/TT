@@ -106,7 +106,7 @@ export class GameOverScene extends Phaser.Scene {
     });
 
     // Keyboard shortcuts
-    this.input.keyboard!.once("keydown-SPACE", () => {
+    this.input.keyboard?.once("keydown-SPACE", () => {
       this.scene.start("GameScene");
       this.scene.launch("UIScene");
     });

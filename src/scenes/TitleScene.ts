@@ -42,8 +42,8 @@ export class TitleScene extends Phaser.Scene {
       color: "#606080",
     }).setOrigin(0.5);
 
-    // Start on space or click
-    this.input.keyboard!.once("keydown-SPACE", () => this.startGame());
+    // Start on space or click/tap
+    this.input.keyboard?.once("keydown-SPACE", () => this.startGame());
     this.input.once("pointerdown", () => this.startGame());
   }
 

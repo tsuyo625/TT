@@ -99,10 +99,12 @@ export class Player {
 
     if (this.input.left) {
       body.setAccelerationX(-PLAYER_ACCELERATION);
+      body.setDragX(0);
       this.sprite.setFlipX(true);
       this.facingRight = false;
     } else if (this.input.right) {
       body.setAccelerationX(PLAYER_ACCELERATION);
+      body.setDragX(0);
       this.sprite.setFlipX(false);
       this.facingRight = true;
     } else {
@@ -234,9 +236,11 @@ export class Player {
   respawnAt(x: number, y: number): void {
     this.sprite.setPosition(x, y);
     this.body.setVelocity(0, 0);
+    this.body.setAcceleration(0, 0);
     this.isJumping = false;
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
+    this.airJumpsRemaining = this.maxAirJumps;
     this.invincibleTimer = 1500;
     this.sprite.setAlpha(0.5);
   }

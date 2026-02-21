@@ -73,9 +73,10 @@ export class LevelBuilder {
     }
 
     // Build enemies
+    // Enemy origin is (0.5, 1) = bottom-center, so Y should be tile bottom edge
     for (const ep of PROTOTYPE_ENEMIES) {
       const ex = ep.tileX * TILE_SIZE + TILE_SIZE / 2;
-      const ey = ep.tileY * TILE_SIZE + TILE_SIZE / 2;
+      const ey = (ep.tileY + 1) * TILE_SIZE;
 
       if (ep.type === "patrol") {
         enemies.push(new PatrolEnemy(scene, ex, ey, ep.patrolRange ?? 5));

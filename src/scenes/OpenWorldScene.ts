@@ -78,15 +78,22 @@ export class OpenWorldScene {
     this.input = input;
   }
 
-  init(): void {
+  async init(): Promise<void> {
     const scene = this.engine.scene;
 
     this.world = new OpenWorld(scene, this.engine.shadowGenerator);
 
+    // Show join dialog first to get name and color
+    const joinDialog = new JoinDialog();
+    const joinResult = await joinDialog.show();
+    this.localPlayerName = joinResult.name;
+    const playerColor = new Color3(joinResult.color.r, joinResult.color.g, joinResult.color.b);
+    console.log(`[OpenWorldScene] Player: ${this.localPlayerName}, color: ${playerColor}`);
+
     this.player = new Player(
       scene,
       this.input,
-      new Color3(0.2, 0.6, 0.85),
+      playerColor,
       0, 8
     );
 
@@ -104,7 +111,7 @@ export class OpenWorldScene {
 
     this.createUI();
 
-    // Initialize network
+    // Initialize network (no longer shows dialog)
     this.initNetwork();
 
     this.engine.onUpdate((dt) => this.update(dt));
@@ -116,11 +123,6 @@ export class OpenWorldScene {
   }
 
   private async initNetwork(): Promise<void> {
-    // Show join dialog first
-    const joinDialog = new JoinDialog();
-    this.localPlayerName = await joinDialog.show();
-    console.log(`[OpenWorldScene] Player name: ${this.localPlayerName}`);
-
     const serverUrl = this.getServerUrl();
     console.log(`[OpenWorldScene] Connecting to ${serverUrl}...`);
 

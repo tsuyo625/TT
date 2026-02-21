@@ -5,7 +5,7 @@ export interface GameLobbyCallbacks {
   getConnectedPlayerIds(): string[];
   getPlayerName(id: string): string;
   getLocalPlayerId(): string | null;
-  onStartGame(gameId: string, players: string[]): void;
+  onStartGame(gameId: string, players: string[], cpuCount: number): void;
   isPlaying(): boolean;
   onStopGame(): void;
 }
@@ -16,11 +16,12 @@ export class GameLobbyUI {
   private panel: HTMLDivElement | null = null;
   private isOpen = false;
   private selectedGameId: string | null = null;
+  private cpuCount = 2;
 
   constructor(callbacks: GameLobbyCallbacks) {
     this.callbacks = callbacks;
 
-    // Play button (top-left, next to chat area)
+    // Play button (top-left, next to debug button)
     this.playBtn = document.createElement("button");
     this.playBtn.textContent = "Play";
     this.playBtn.style.cssText =
@@ -99,20 +100,36 @@ export class GameLobbyUI {
     }
     html += `</div>`;
 
-    // Player list
+    // CPU count selector
+    const selectedGame = games.find((g) => g.id === this.selectedGameId);
+    const maxCpu = selectedGame ? selectedGame.maxPlayers - players.length : 9;
     html += `<div style="margin-bottom:12px">`;
-    html += `<div style="font-size:13px;color:#aaa;margin-bottom:4px">接続中のプレイヤー (${players.length})</div>`;
+    html += `<div style="font-size:13px;color:#aaa;margin-bottom:6px">CPU人数</div>`;
+    html += `<div style="display:flex;align-items:center;gap:8px">`;
+    html += `<button data-action="cpu-dec" style="width:32px;height:32px;border-radius:50%;border:1px solid #888;` +
+      `background:rgba(255,255,255,0.1);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">-</button>`;
+    html += `<span style="font-size:20px;font-weight:bold;min-width:32px;text-align:center">${this.cpuCount}</span>`;
+    html += `<button data-action="cpu-inc" style="width:32px;height:32px;border-radius:50%;border:1px solid #888;` +
+      `background:rgba(255,255,255,0.1);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>`;
+    html += `</div></div>`;
+
+    // Player list
+    const totalPlayers = players.length + this.cpuCount;
+    html += `<div style="margin-bottom:12px">`;
+    html += `<div style="font-size:13px;color:#aaa;margin-bottom:4px">参加者 (${totalPlayers}人)</div>`;
     for (const pid of players) {
       const name = this.callbacks.getPlayerName(pid);
       const isMe = pid === localId;
       const style = isMe ? "color:#ffdd44" : "color:#ccc";
       html += `<div style="padding:3px 8px;font-size:13px;${style}">${name}${isMe ? " (あなた)" : ""}</div>`;
     }
+    if (this.cpuCount > 0) {
+      html += `<div style="padding:3px 8px;font-size:13px;color:#8ad">CPU x${this.cpuCount}</div>`;
+    }
     html += `</div>`;
 
     // Start button
-    const selectedGame = games.find((g) => g.id === this.selectedGameId);
-    const canStart = selectedGame && players.length >= selectedGame.minPlayers;
+    const canStart = selectedGame && totalPlayers >= selectedGame.minPlayers;
     const btnBg = canStart ? "linear-gradient(135deg,#4a9eff 0%,#0066cc 100%)" : "rgba(100,100,100,0.5)";
     const btnCursor = canStart ? "pointer" : "not-allowed";
     html +=
@@ -131,12 +148,28 @@ export class GameLobbyUI {
       });
     });
 
+    // Bind CPU count buttons
+    const decBtn = this.panel.querySelector<HTMLButtonElement>("[data-action='cpu-dec']");
+    const incBtn = this.panel.querySelector<HTMLButtonElement>("[data-action='cpu-inc']");
+    decBtn?.addEventListener("click", () => {
+      if (this.cpuCount > 0) {
+        this.cpuCount--;
+        this.renderPanel();
+      }
+    });
+    incBtn?.addEventListener("click", () => {
+      if (this.cpuCount < Math.max(maxCpu, 9)) {
+        this.cpuCount++;
+        this.renderPanel();
+      }
+    });
+
     // Bind start button
     const startBtn = this.panel.querySelector<HTMLButtonElement>("[data-action='start']");
     if (startBtn && canStart) {
       startBtn.addEventListener("click", () => {
         if (this.selectedGameId) {
-          this.callbacks.onStartGame(this.selectedGameId, players);
+          this.callbacks.onStartGame(this.selectedGameId, players, this.cpuCount);
           this.close();
           this.playBtn.textContent = "Stop";
           this.playBtn.style.borderColor = "rgba(255,80,80,0.5)";

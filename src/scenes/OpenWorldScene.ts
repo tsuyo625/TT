@@ -199,13 +199,13 @@ export class OpenWorldScene {
       },
       getPlayerName: (id: string) => this.playerNames.get(id) ?? id.slice(0, 8),
       getLocalPlayerId: () => this.networkManager?.localPlayerId ?? null,
-      onStartGame: (gameId: string, players: string[]) => {
+      onStartGame: (gameId: string, players: string[], cpuCount: number) => {
         const hostId = this.networkManager?.localPlayerId;
         if (!hostId) return;
         // Broadcast to all players
-        this.networkManager?.sendAction("minigame_start", { gameId, players, hostId });
+        this.networkManager?.sendAction("minigame_start", { gameId, players, hostId, cpuCount });
         // Start locally
-        this.miniGameManager?.startGame(gameId, players, hostId);
+        this.miniGameManager?.startGame(gameId, players, hostId, cpuCount);
       },
       isPlaying: () => this.miniGameManager?.isPlaying() ?? false,
       onStopGame: () => {

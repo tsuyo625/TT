@@ -1,7 +1,8 @@
 import { MiniGame, MiniGameConfig, MiniGameCallbacks } from "./MiniGame";
 import { TagGame } from "./TagGame";
+import { CpuPlayerManager } from "./CpuPlayerManager";
 
-export type MiniGameFactory = (callbacks: MiniGameCallbacks) => MiniGame;
+export type MiniGameFactory = (callbacks: MiniGameCallbacks, cpuManager: CpuPlayerManager) => MiniGame;
 
 interface GameEntry {
   config: MiniGameConfig;
@@ -13,6 +14,7 @@ export class MiniGameManager {
   private currentGame: MiniGame | null = null;
   private callbacks: MiniGameCallbacks;
   private overlay: HTMLDivElement | null = null;
+  private cpuManager: CpuPlayerManager = new CpuPlayerManager();
 
   constructor(callbacks: MiniGameCallbacks) {
     this.callbacks = callbacks;
@@ -20,7 +22,7 @@ export class MiniGameManager {
   }
 
   private registerBuiltInGames(): void {
-    this.register(TagGame.CONFIG, (cb) => new TagGame(cb));
+    this.register(TagGame.CONFIG, (cb, cpu) => new TagGame(cb, cpu));
   }
 
   register(config: MiniGameConfig, factory: MiniGameFactory): void {
@@ -32,7 +34,7 @@ export class MiniGameManager {
   }
 
   /** Start a game by id */
-  startGame(gameId: string, players: string[], hostId: string): void {
+  startGame(gameId: string, players: string[], hostId: string, cpuCount = 0): void {
     if (this.currentGame?.isActive()) {
       this.currentGame.stop();
       this.removeOverlay();
@@ -41,8 +43,14 @@ export class MiniGameManager {
     const entry = this.registry.get(gameId);
     if (!entry) return;
 
-    this.currentGame = entry.factory(this.callbacks);
-    this.currentGame.start(players, hostId);
+    // Spawn CPUs near the local player
+    const localPos = this.callbacks.getLocalPosition();
+    this.cpuManager = new CpuPlayerManager(localPos.x, localPos.z);
+    const cpuIds = this.cpuManager.spawn(cpuCount);
+    const allPlayers = [...players, ...cpuIds];
+
+    this.currentGame = entry.factory(this.callbacks, this.cpuManager);
+    this.currentGame.start(allPlayers, hostId);
     this.createOverlay();
   }
 
@@ -50,8 +58,8 @@ export class MiniGameManager {
   handleAction(playerId: string, action: string, params: unknown): void {
     // Handle game management actions
     if (action === "minigame_start") {
-      const p = params as { gameId: string; players: string[]; hostId: string };
-      this.startGame(p.gameId, p.players, p.hostId);
+      const p = params as { gameId: string; players: string[]; hostId: string; cpuCount?: number };
+      this.startGame(p.gameId, p.players, p.hostId, p.cpuCount ?? 0);
       return;
     }
 
@@ -69,6 +77,7 @@ export class MiniGameManager {
       if (this.currentGame) {
         this.removeOverlay();
         this.currentGame = null;
+        this.cpuManager.clear();
       }
       return;
     }
@@ -82,6 +91,7 @@ export class MiniGameManager {
       this.currentGame.stop();
       this.removeOverlay();
       this.currentGame = null;
+      this.cpuManager.clear();
     }
   }
 

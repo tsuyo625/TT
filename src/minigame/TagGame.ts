@@ -1,4 +1,5 @@
 import { MiniGame, MiniGameConfig, MiniGameCallbacks } from "./MiniGame";
+import { CpuPlayerManager } from "./CpuPlayerManager";
 
 const TAG_RANGE = 2.5; // distance to tag another player
 const TAG_COOLDOWN = 2.0; // seconds before the new "it" can tag someone
@@ -14,12 +15,14 @@ export class TagGame extends MiniGame {
     durationSec: 90,
   };
 
+  private cpuManager: CpuPlayerManager;
   private oniId: string | null = null; // current "it" player
   private scores: Map<string, number> = new Map(); // time spent NOT as oni (higher = better)
   private tagCooldown = 0;
 
-  constructor(callbacks: MiniGameCallbacks) {
+  constructor(callbacks: MiniGameCallbacks, cpuManager: CpuPlayerManager) {
     super(TagGame.CONFIG, callbacks);
+    this.cpuManager = cpuManager;
   }
 
   start(players: string[], hostId: string): void {
@@ -48,7 +51,7 @@ export class TagGame extends MiniGame {
       });
     }
 
-    const oniName = this.callbacks.getPlayerName(this.oniId!);
+    const oniName = this.getPlayerName(this.oniId!);
     this.callbacks.showMessage(`おにごっこ開始! ${oniName} が鬼だ!`);
   }
 
@@ -72,30 +75,73 @@ export class TagGame extends MiniGame {
       return;
     }
 
-    // Check tag (only the oni player checks locally)
-    const localId = this.callbacks.getLocalPlayerId();
-    if (localId === this.oniId && this.tagCooldown <= 0) {
-      this.checkTag();
-    }
+    // Build combined positions (real + cpu) for AI and tag checks
+    const allPositions = this.getAllPositions();
+
+    // Update CPU AI
+    this.cpuManager.update(dt, this.oniId, allPositions);
+
+    // Check tags
+    this.checkAllTags(allPositions);
   }
 
-  private checkTag(): void {
-    const myPos = this.callbacks.getLocalPosition();
+  /** Get positions of all participants (local, remote, cpu) */
+  private getAllPositions(): Map<string, { x: number; y: number; z: number }> {
+    const positions = new Map<string, { x: number; y: number; z: number }>();
+
+    // Local player
+    const localId = this.callbacks.getLocalPlayerId();
+    if (localId && this.players.has(localId)) {
+      positions.set(localId, this.callbacks.getLocalPosition());
+    }
+
+    // Remote players
     const remotes = this.callbacks.getRemotePositions();
+    for (const [id, pos] of remotes) {
+      if (this.players.has(id)) {
+        positions.set(id, pos);
+      }
+    }
 
-    for (const [playerId, pos] of remotes) {
-      if (!this.players.has(playerId) || playerId === this.oniId) continue;
+    // CPU players
+    const cpuPositions = this.cpuManager.getAllPositions();
+    for (const [id, pos] of cpuPositions) {
+      if (this.players.has(id)) {
+        positions.set(id, pos);
+      }
+    }
 
-      const dx = myPos.x - pos.x;
-      const dz = myPos.z - pos.z;
+    return positions;
+  }
+
+  /** Check tags from all oni sources (local player if oni, and cpu if oni) */
+  private checkAllTags(allPositions: Map<string, { x: number; y: number; z: number }>): void {
+    if (this.tagCooldown > 0 || !this.oniId) return;
+
+    const oniPos = allPositions.get(this.oniId);
+    if (!oniPos) return;
+
+    const localId = this.callbacks.getLocalPlayerId();
+    // Only the host checks CPU-oni tags, and local player checks their own oni
+    const isLocalOni = this.oniId === localId;
+    const isCpuOni = this.cpuManager.isCpu(this.oniId);
+    const isHost = localId === this.hostId;
+
+    if (!isLocalOni && !(isCpuOni && isHost)) return;
+
+    for (const [playerId, pos] of allPositions) {
+      if (playerId === this.oniId) continue;
+      if (!this.players.has(playerId)) continue;
+
+      const dx = oniPos.x - pos.x;
+      const dz = oniPos.z - pos.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
 
       if (dist < TAG_RANGE) {
-        // Tag!
         this.oniId = playerId;
         this.tagCooldown = TAG_COOLDOWN;
         this.callbacks.sendAction("tag_tagged", { newOniId: playerId });
-        const name = this.callbacks.getPlayerName(playerId);
+        const name = this.getPlayerName(playerId);
         this.callbacks.showMessage(`${name} が鬼になった!`);
         break;
       }
@@ -115,7 +161,7 @@ export class TagGame extends MiniGame {
       this.tagCooldown = 0;
       this.active = true;
 
-      const oniName = this.callbacks.getPlayerName(this.oniId);
+      const oniName = this.getPlayerName(this.oniId);
       this.callbacks.showMessage(`おにごっこ開始! ${oniName} が鬼だ!`);
     }
 
@@ -123,7 +169,7 @@ export class TagGame extends MiniGame {
       const p = params as { newOniId: string };
       this.oniId = p.newOniId;
       this.tagCooldown = TAG_COOLDOWN;
-      const name = this.callbacks.getPlayerName(p.newOniId);
+      const name = this.getPlayerName(p.newOniId);
       this.callbacks.showMessage(`${name} が鬼になった!`);
     }
   }
@@ -136,7 +182,7 @@ export class TagGame extends MiniGame {
 
     const localId = this.callbacks.getLocalPlayerId();
     const isOni = localId === this.oniId;
-    const oniName = this.oniId ? this.callbacks.getPlayerName(this.oniId) : "???";
+    const oniName = this.oniId ? this.getPlayerName(this.oniId) : "???";
 
     const roleText = isOni
       ? '<span style="color:#ff4444;font-weight:bold">あなたが鬼!</span>'
@@ -148,7 +194,7 @@ export class TagGame extends MiniGame {
       .slice(0, 5);
     const scoreLines = sorted
       .map(([id, score]) => {
-        const name = this.callbacks.getPlayerName(id);
+        const name = this.getPlayerName(id);
         const isMe = id === localId;
         const isIt = id === this.oniId;
         const marker = isIt ? " [鬼]" : "";
@@ -166,6 +212,13 @@ export class TagGame extends MiniGame {
     );
   }
 
+  /** Get player name, handling both real players and CPU */
+  private getPlayerName(id: string): string {
+    const cpuName = this.cpuManager.getName(id);
+    if (cpuName) return cpuName;
+    return this.callbacks.getPlayerName(id);
+  }
+
   private endGame(): void {
     this.active = false;
 
@@ -179,7 +232,7 @@ export class TagGame extends MiniGame {
       }
     }
 
-    const winnerName = winnerId ? this.callbacks.getPlayerName(winnerId) : "???";
+    const winnerName = winnerId ? this.getPlayerName(winnerId) : "???";
     this.callbacks.showMessage(`おにごっこ終了! ${winnerName} の勝ち! (${Math.floor(best)}pt)`);
   }
 

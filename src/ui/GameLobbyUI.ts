@@ -24,7 +24,7 @@ export class GameLobbyUI {
     this.playBtn = document.createElement("button");
     this.playBtn.textContent = "Play";
     this.playBtn.style.cssText =
-      "position:fixed;left:10px;top:10px;height:40px;padding:0 16px;" +
+      "position:fixed;left:62px;top:10px;height:40px;padding:0 16px;" +
       "border-radius:20px;border:2px solid rgba(100,200,100,0.5);" +
       "background:rgba(0,0,0,0.5);color:#6c6;font-size:14px;font-weight:bold;" +
       "cursor:pointer;z-index:100;font-family:sans-serif;" +
@@ -56,7 +56,7 @@ export class GameLobbyUI {
 
     this.panel = document.createElement("div");
     this.panel.style.cssText =
-      "position:fixed;left:10px;top:60px;width:280px;" +
+      "position:fixed;left:62px;top:60px;width:280px;" +
       "background:rgba(10,10,30,0.9);border:1px solid rgba(100,200,100,0.3);" +
       "border-radius:10px;padding:16px;z-index:100;font-family:sans-serif;" +
       "color:#fff;backdrop-filter:blur(8px);pointer-events:auto;";

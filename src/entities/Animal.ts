@@ -21,7 +21,12 @@ export class Animal {
   private speed: number;
   private wanderRadius: number;
 
-  // AI state
+  // Server-driven state
+  private serverX: number | null = null;
+  private serverZ: number | null = null;
+  private serverRotY: number | null = null;
+
+  // AI state (used as fallback when not connected)
   private homeX: number;
   private homeZ: number;
   private targetX = 0;
@@ -68,19 +73,30 @@ export class Animal {
     this.targetZ = Math.max(-MAP_HALF, Math.min(MAP_HALF, this.targetZ));
   }
 
+  /** Apply server-authoritative position */
+  updateFromServer(x: number, z: number, rotY: number): void {
+    this.serverX = x;
+    this.serverZ = z;
+    this.serverRotY = rotY;
+  }
+
   update(dt: number): void {
+    if (this.serverX !== null && this.serverZ !== null && this.serverRotY !== null) {
+      this.updateServerDriven(dt);
+      return;
+    }
+
+    // Fallback: local AI when not connected
     if (this.state === "pause") {
       this.timer -= dt;
       if (this.timer <= 0) {
         this.pickTarget();
         this.state = "walk";
       }
-      // Ease legs back to rest
       this.easeLegsToRest(dt);
       return;
     }
 
-    // Walk toward target
     const px = this.root.position.x;
     const pz = this.root.position.z;
     const dx = this.targetX - px;
@@ -88,7 +104,6 @@ export class Animal {
     const dist = Math.sqrt(dx * dx + dz * dz);
 
     if (dist < 0.5) {
-      // Arrived – pause
       this.state = "pause";
       this.timer = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
       return;
@@ -100,17 +115,41 @@ export class Animal {
 
     this.root.position.x += nx * step;
     this.root.position.z += nz * step;
-
-    // Face direction
     this.root.rotation.y = Math.atan2(nx, nz);
 
-    // Walk animation
     this.walkPhase += this.speed * 5 * dt;
     const s = Math.sin(this.walkPhase);
     this.fl.rotation.x = s * LEG_SWING;
     this.fr.rotation.x = -s * LEG_SWING;
     this.bl.rotation.x = -s * LEG_SWING;
     this.br.rotation.x = s * LEG_SWING;
+  }
+
+  private updateServerDriven(dt: number): void {
+    const tx = this.serverX!;
+    const tz = this.serverZ!;
+
+    // Compute movement speed for animation
+    const dx = tx - this.root.position.x;
+    const dz = tz - this.root.position.z;
+    const speed = Math.sqrt(dx * dx + dz * dz);
+
+    // Smooth interpolation toward server position
+    this.root.position.x += dx * Math.min(1, dt * 8);
+    this.root.position.z += dz * Math.min(1, dt * 8);
+    this.root.rotation.y = this.serverRotY!;
+
+    // Walk animation based on actual movement
+    if (speed > 0.01) {
+      this.walkPhase += this.speed * 5 * dt;
+      const s = Math.sin(this.walkPhase);
+      this.fl.rotation.x = s * LEG_SWING;
+      this.fr.rotation.x = -s * LEG_SWING;
+      this.bl.rotation.x = -s * LEG_SWING;
+      this.br.rotation.x = s * LEG_SWING;
+    } else {
+      this.easeLegsToRest(dt);
+    }
   }
 
   private easeLegsToRest(dt: number): void {

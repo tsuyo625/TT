@@ -1,8 +1,10 @@
 import {
   NetworkConfig,
   NetworkEvent,
+  NpcState,
   RemotePlayerState,
   PACKET_POSITION,
+  PACKET_NPC_STATE,
   PACKET_STATE_BROADCAST,
   IncomingBroadcast,
 } from "./types";
@@ -121,12 +123,8 @@ export class NetworkManager {
 
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
-          // Binary = state broadcast
           const data = new Uint8Array(event.data);
-          const players = this.parseStateDatagram(data);
-          if (players.size > 0) {
-            this.onEvent?.({ type: "state_update", players, serverTime: Date.now() });
-          }
+          this.handleBinaryPacket(data);
         } else {
           // Text = JSON broadcast
           try {
@@ -293,11 +291,7 @@ export class NetworkManager {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-
-        const players = this.parseStateDatagram(value);
-        if (players.size > 0) {
-          this.onEvent?.({ type: "state_update", players, serverTime: Date.now() });
-        }
+        this.handleBinaryPacket(value);
       }
     } catch (err) {
       if (!this.destroyed) {
@@ -427,6 +421,47 @@ export class NetworkManager {
         });
         break;
     }
+  }
+
+  /** Route incoming binary packet by type byte */
+  private handleBinaryPacket(data: Uint8Array): void {
+    if (data.length < 1) return;
+    const type = data[0];
+
+    if (type === PACKET_STATE_BROADCAST) {
+      const players = this.parseStateDatagram(data);
+      if (players.size > 0) {
+        this.onEvent?.({ type: "state_update", players, serverTime: Date.now() });
+      }
+    } else if (type === PACKET_NPC_STATE) {
+      const npcs = this.parseNpcState(data);
+      if (npcs.length > 0) {
+        this.onEvent?.({ type: "npc_state_update", npcs });
+      }
+    }
+  }
+
+  /** Parse NPC state broadcast (0xFE binary packet) */
+  private parseNpcState(data: Uint8Array): NpcState[] {
+    const npcs: NpcState[] = [];
+    if (data.length < 3) return npcs;
+
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const count = view.getUint16(1, true);
+
+    let offset = 3;
+    for (let i = 0; i < count; i++) {
+      if (offset + 13 > data.length) break;
+      npcs.push({
+        index: view.getUint8(offset),
+        x: view.getFloat32(offset + 1, true),
+        z: view.getFloat32(offset + 5, true),
+        rotY: view.getFloat32(offset + 9, true),
+      });
+      offset += 13;
+    }
+
+    return npcs;
   }
 
   /** Parse state broadcast (0xFF binary packet) */

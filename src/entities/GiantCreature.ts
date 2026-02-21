@@ -39,7 +39,12 @@ export class GiantCreature {
   private neckBob: number;
   private tailSwing: number;
 
-  // AI state
+  // Server-driven state
+  private serverX: number | null = null;
+  private serverZ: number | null = null;
+  private serverRotY: number | null = null;
+
+  // AI state (used as fallback when not connected)
   private homeX: number;
   private homeZ: number;
   private targetX = 0;
@@ -88,21 +93,31 @@ export class GiantCreature {
     this.targetZ = Math.max(-DEFAULTS.mapHalf, Math.min(DEFAULTS.mapHalf, this.targetZ));
   }
 
+  /** Apply server-authoritative position */
+  updateFromServer(x: number, z: number, rotY: number): void {
+    this.serverX = x;
+    this.serverZ = z;
+    this.serverRotY = rotY;
+  }
+
   update(dt: number): void {
+    if (this.serverX !== null && this.serverZ !== null && this.serverRotY !== null) {
+      this.updateServerDriven(dt);
+      return;
+    }
+
+    // Fallback: local AI when not connected
     if (this.state === "pause") {
       this.timer -= dt;
       if (this.timer <= 0) {
         this.pickTarget();
         this.state = "walk";
       }
-      // Ease animations back to rest
       this.easeToRest(dt);
-      // Subtle idle breathing/movement
       this.idleAnimation(dt);
       return;
     }
 
-    // Walk toward target
     const px = this.root.position.x;
     const pz = this.root.position.z;
     const dx = this.targetX - px;
@@ -110,7 +125,6 @@ export class GiantCreature {
     const dist = Math.sqrt(dx * dx + dz * dz);
 
     if (dist < 5) {
-      // Arrived – pause
       this.state = "pause";
       this.timer = DEFAULTS.pauseMin + Math.random() * (DEFAULTS.pauseMax - DEFAULTS.pauseMin);
       return;
@@ -123,29 +137,62 @@ export class GiantCreature {
     this.root.position.x += nx * step;
     this.root.position.z += nz * step;
 
-    // Face direction (slow turn)
     const targetRot = Math.atan2(nx, nz);
     let rotDiff = targetRot - this.root.rotation.y;
     while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
     while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-    this.root.rotation.y += rotDiff * dt * 0.5; // Slow turning
+    this.root.rotation.y += rotDiff * dt * 0.5;
 
-    // Walk animation
     this.walkPhase += this.moveSpeed * 0.8 * dt;
     const sn = Math.sin(this.walkPhase);
 
-    // Legs - alternating diagonal pairs
     this.fl.rotation.x = sn * this.legSwing;
     this.br.rotation.x = sn * this.legSwing;
     this.fr.rotation.x = -sn * this.legSwing;
     this.bl.rotation.x = -sn * this.legSwing;
 
-    // Neck bobs up and down
     this.neck.rotation.x = Math.sin(this.walkPhase * 2) * this.neckBob;
 
-    // Tail sways
     this.tail.rotation.y = Math.sin(this.walkPhase * 0.7) * this.tailSwing;
     this.tail.rotation.x = Math.sin(this.walkPhase * 0.5) * this.tailSwing * 0.5;
+  }
+
+  private updateServerDriven(dt: number): void {
+    const tx = this.serverX!;
+    const tz = this.serverZ!;
+
+    const dx = tx - this.root.position.x;
+    const dz = tz - this.root.position.z;
+    const speed = Math.sqrt(dx * dx + dz * dz);
+
+    // Smooth interpolation toward server position
+    this.root.position.x += dx * Math.min(1, dt * 4);
+    this.root.position.z += dz * Math.min(1, dt * 4);
+
+    // Smooth rotation interpolation
+    let rotDiff = this.serverRotY! - this.root.rotation.y;
+    while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+    while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+    this.root.rotation.y += rotDiff * Math.min(1, dt * 4);
+
+    if (speed > 0.05) {
+      // Walking: animate legs, neck, tail
+      this.walkPhase += this.moveSpeed * 0.8 * dt;
+      const sn = Math.sin(this.walkPhase);
+
+      this.fl.rotation.x = sn * this.legSwing;
+      this.br.rotation.x = sn * this.legSwing;
+      this.fr.rotation.x = -sn * this.legSwing;
+      this.bl.rotation.x = -sn * this.legSwing;
+
+      this.neck.rotation.x = Math.sin(this.walkPhase * 2) * this.neckBob;
+      this.tail.rotation.y = Math.sin(this.walkPhase * 0.7) * this.tailSwing;
+      this.tail.rotation.x = Math.sin(this.walkPhase * 0.5) * this.tailSwing * 0.5;
+    } else {
+      // Idle: ease legs to rest + breathing
+      this.easeToRest(dt);
+      this.idleAnimation(dt);
+    }
   }
 
   private easeToRest(dt: number): void {

@@ -2,7 +2,16 @@
 export const PACKET_POSITION = 0x01;
 export const PACKET_VELOCITY = 0x02;
 export const PACKET_INPUT = 0x03;
+export const PACKET_NPC_STATE = 0xfe;
 export const PACKET_STATE_BROADCAST = 0xff;
+
+// NPC state from server broadcast
+export interface NpcState {
+  index: number;
+  x: number;
+  z: number;
+  rotY: number;
+}
 
 // Remote player state from server broadcast
 export interface RemotePlayerState {
@@ -26,7 +35,8 @@ export type NetworkEvent =
       serverTime: number;
     }
   | { type: "chat"; playerId: string; message: string; timestamp: number }
-  | { type: "action"; playerId: string; action: string; params: unknown };
+  | { type: "action"; playerId: string; action: string; params: unknown }
+  | { type: "npc_state_update"; npcs: NpcState[] };
 
 // Outgoing messages (JSON over BiDi stream)
 export interface ChatMessage {

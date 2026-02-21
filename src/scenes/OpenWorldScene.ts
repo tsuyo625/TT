@@ -11,7 +11,7 @@ import { GiantCreature, GiantCreatureOpts } from "../entities/GiantCreature";
 import { AssetFactory } from "../core/AssetFactory";
 import { NetworkManager } from "../network/NetworkManager";
 import { RemotePlayer } from "../entities/RemotePlayer";
-import { NetworkEvent, RemotePlayerState } from "../network/types";
+import { NetworkEvent, NpcState, RemotePlayerState } from "../network/types";
 import { ChatUI } from "../ui/ChatUI";
 import { JoinDialog } from "../ui/JoinDialog";
 import { MiniGameManager } from "../minigame/MiniGameManager";
@@ -389,6 +389,25 @@ export class OpenWorldScene {
           this.gameLobbyUI.onGameEnded();
         }
         break;
+
+      case "npc_state_update":
+        this.updateNpcPositions(event.npcs);
+        break;
+    }
+  }
+
+  /** Feed server NPC positions to local animal/giant creature entities */
+  private updateNpcPositions(npcs: NpcState[]): void {
+    const animalCount = this.animals.length;
+    for (const npc of npcs) {
+      if (npc.index < animalCount) {
+        this.animals[npc.index].updateFromServer(npc.x, npc.z, npc.rotY);
+      } else {
+        const gcIndex = npc.index - animalCount;
+        if (gcIndex < this.giantCreatures.length) {
+          this.giantCreatures[gcIndex].updateFromServer(npc.x, npc.z, npc.rotY);
+        }
+      }
     }
   }
 

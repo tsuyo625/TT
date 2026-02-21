@@ -1,22 +1,7 @@
-import { Engine } from "./core/Engine";
-import { InputManager } from "./core/InputManager";
-import { OpenWorldScene } from "./scenes/OpenWorldScene";
+import Phaser from "phaser";
+import { gameConfig } from "./config/GameConfig";
 
-console.info("main.ts: modules loaded");
-
-function startOpenWorld() {
-  const engine = new Engine(document.body);
-  const input = new InputManager(engine.canvas);
-
-  const scene = new OpenWorldScene(engine, input);
-  scene.init();
-  engine.start();
-}
-
-// Signal to watchdog that the module loaded successfully
-(window as unknown as Record<string, unknown>).__MODULE_LOADED = true;
-
-// Remove loading screen and start
+window.__MODULE_LOADED = true;
 document.getElementById("loading-screen")?.remove();
-console.info("main.ts: starting open world");
-startOpenWorld();
+
+new Phaser.Game(gameConfig);

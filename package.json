@@ -1,15 +1,12 @@
 {
-  "name": "tt",
-  "version": "2.0.0",
-  "description": "Open world exploration game built with Babylon.js + TypeScript",
+  "name": "death-evolution-2d",
+  "version": "0.1.0",
+  "description": "2D side-scrolling action game where death evolves your character",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview",
-    "cap:sync": "npx cap sync",
-    "cap:android": "npx cap open android",
-    "cap:ios": "npx cap open ios"
+    "preview": "vite preview"
   },
   "repository": {
     "type": "git",
@@ -19,15 +16,10 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@capacitor/android": "^8.1.0",
-    "@capacitor/cli": "^8.1.0",
-    "@capacitor/core": "^8.1.0",
-    "@capacitor/ios": "^8.1.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   },
   "dependencies": {
-    "@babylonjs/core": "^7.0.0",
-    "colyseus.js": "^0.16.22"
+    "phaser": "^3.90.0"
   }
 }

@@ -1,292 +1,247 @@
-import { Scene } from "@babylonjs/core/scene";
-import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
-import { AssetFactory } from "../core/AssetFactory";
-import { InputManager } from "../core/InputManager";
-import type { ViewMode } from "../core/Engine";
-
-const WALK_ANIM_SPEED = 10;   // radians per second for limb swing
-const ARM_SWING = 0.6;         // max rotation (radians) for arms
-const LEG_SWING = 0.5;         // max rotation (radians) for legs
-const HEAD_BOB_AMOUNT = 0.03;  // vertical head bob
-const ANIM_RETURN_SPEED = 8;   // how fast limbs return to rest
-
-// Stamina constants
-const MAX_STAMINA = 100;
-const STAMINA_DRAIN_RATE = 30;       // per second while dash-moving
-const STAMINA_RECOVER_RATE = 12;     // per second when not dashing (normal)
-const EXHAUST_DURATION = 3.0;        // seconds of blue bar
-const RED_REFILL_RATE = 20;          // per second after exhaustion ends
-const DASH_SPEED_MULT = 1.8;
-const EXHAUST_SPEED_MULT = 0.35;
-
-export type StaminaState = "normal" | "exhausted" | "recovery";
+import Phaser from "phaser";
+import type { DeathCause, EvolutionType } from "../types";
+import { InputManager } from "../systems/InputManager";
+import { deathBurst } from "../effects/ParticleEffects";
+import {
+  PLAYER_SPEED,
+  PLAYER_ACCELERATION,
+  PLAYER_DECELERATION,
+  PLAYER_JUMP_VELOCITY,
+  PLAYER_MAX_FALL_SPEED,
+  COYOTE_TIME_MS,
+  JUMP_BUFFER_MS,
+  VARIABLE_JUMP_MULTIPLIER,
+  ATTACK_RANGE,
+  ATTACK_DAMAGE,
+  ATTACK_DURATION_MS,
+  ATTACK_COOLDOWN_MS,
+  WING_EVOLUTION_EXTRA_JUMPS,
+  POWER_EVOLUTION_DAMAGE_MULT,
+  SPEED_EVOLUTION_SPEED_MULT,
+} from "../config/Constants";
 
 export class Player {
-  readonly mesh: TransformNode;
-  private readonly collider: Mesh;
-  private readonly moveSpeed = 10;
-  private readonly input: InputManager;
-  private targetRotation = 0;
+  sprite: Phaser.Physics.Arcade.Sprite;
+  lastDamageSource: DeathCause = "fall";
 
-  // Joint references for animation
-  private leftShoulder: TransformNode;
-  private rightShoulder: TransformNode;
-  private leftHip: TransformNode;
-  private rightHip: TransformNode;
-  private headNode: TransformNode;
-  private walkPhase = 0;
-  private isMoving = false;
-  private hasDashMoved = false; // true once player actually moved while dash is on
+  private scene: Phaser.Scene;
+  private input: InputManager;
 
-  // Dash / stamina
-  dashOn = false;
-  stamina = MAX_STAMINA;
-  exhaustTimer = 0;              // countdown during blue phase
-  staminaState: StaminaState = "normal";
+  // Movement
+  private speed: number = PLAYER_SPEED;
 
-  // Jump / gravity
-  private velocityY = 0;
-  private readonly gravity = -20;
-  private readonly jumpForce = 8;
-  private isGrounded = true;
+  // Jump
+  private isGrounded = false;
+  private wasGrounded = false;
+  private coyoteTimer = 0;
+  private jumpBufferTimer = 0;
+  private isJumping = false;
+  private airJumpsRemaining = 0;
+  private maxAirJumps = 0;
 
-  constructor(scene: Scene, input: InputManager, color: Color3, x: number, z: number) {
+  // Attack
+  private attackCooldownTimer = 0;
+  private attackDamage: number = ATTACK_DAMAGE;
+  private facingRight = true;
+
+  // Evolution
+  private evolution: EvolutionType | null = null;
+
+  // Invincibility after respawn
+  private invincibleTimer = 0;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, input: InputManager) {
+    this.scene = scene;
     this.input = input;
-    const char = AssetFactory.createCharacter(scene, color);
-    this.mesh = char.root;
-    this.leftShoulder = char.leftShoulder;
-    this.rightShoulder = char.rightShoulder;
-    this.leftHip = char.leftHip;
-    this.rightHip = char.rightHip;
-    this.headNode = char.headNode;
-    this.mesh.position = new Vector3(x, 0, z);
 
-    // Invisible collision proxy
-    this.collider = CreateBox("playerCollider", { width: 0.1, height: 0.1, depth: 0.1 }, scene);
-    this.collider.isVisible = false;
-    this.collider.checkCollisions = true;
-    this.collider.ellipsoid = new Vector3(0.4, 0.8, 0.4);
-    this.collider.ellipsoidOffset = new Vector3(0, 0.8, 0);
-    this.collider.position = new Vector3(x, 0, z);
+    this.sprite = scene.physics.add.sprite(x, y, "player");
+    this.sprite.setOrigin(0.5, 1);
+
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    body.setSize(20, 30);
+    body.setOffset(2, 2);
+    body.setMaxVelocityY(PLAYER_MAX_FALL_SPEED);
+    body.setCollideWorldBounds(false);
   }
 
-  update(dt: number, viewMode: ViewMode = "third", fpsYaw = 0, cameraAlpha = -Math.PI / 2): void {
-    // Update stamina state machine
-    this.updateStamina(dt);
+  get body(): Phaser.Physics.Arcade.Body {
+    return this.sprite.body as Phaser.Physics.Arcade.Body;
+  }
 
-    const drag = this.input.drag;
-    this.isMoving = false;
+  get isInvincible(): boolean {
+    return this.invincibleTimer > 0;
+  }
 
-    if (drag.active && drag.magnitude > 0.05) {
-      // Speed multiplier from stamina state
-      let speedMult = 1;
-      if (this.staminaState === "exhausted") {
-        speedMult = EXHAUST_SPEED_MULT;
-      } else if (this.dashOn && this.staminaState !== "recovery" && this.stamina > 0) {
-        speedMult = DASH_SPEED_MULT;
-      } else if (this.dashOn && this.staminaState === "recovery") {
-        speedMult = 1; // normal speed during recovery even if dash is on
+  update(dt: number): void {
+    const dtMs = dt * 1000;
+
+    // Invincibility timer
+    if (this.invincibleTimer > 0) {
+      this.invincibleTimer -= dtMs;
+      this.sprite.setAlpha(Math.sin(Date.now() * 0.02) > 0 ? 1 : 0.3);
+      if (this.invincibleTimer <= 0) {
+        this.sprite.setAlpha(1);
       }
-
-      const speed = drag.magnitude * this.moveSpeed * speedMult * dt;
-      let vx = 0, vz = 0;
-
-      if (viewMode === "first") {
-        const inputX = drag.dirX;
-        const inputZ = -drag.dirY;
-        const cosY = Math.cos(fpsYaw);
-        const sinY = Math.sin(fpsYaw);
-        vx = (inputX * cosY + inputZ * sinY) * speed;
-        vz = (-inputX * sinY + inputZ * cosY) * speed;
-      } else {
-        const angle = cameraAlpha + Math.PI / 2;
-        const cosA = Math.cos(angle);
-        const sinA = Math.sin(angle);
-        const inputX = drag.dirX;
-        const inputZ = -drag.dirY;
-        vx = (inputX * cosA - inputZ * sinA) * speed;
-        vz = (inputX * sinA + inputZ * cosA) * speed;
-      }
-
-      // Move with collision detection (horizontal)
-      this.collider.moveWithCollisions(new Vector3(vx, 0, vz));
-      this.mesh.position.x = this.collider.position.x;
-      this.mesh.position.z = this.collider.position.z;
-
-      this.targetRotation = Math.atan2(vx, vz);
-      this.isMoving = true;
     }
 
-    // Track that we actually moved while dashing
-    if (this.dashOn && this.isMoving) {
-      this.hasDashMoved = true;
-    }
-    // Auto-off dash only after the player has moved and then stopped
-    if (this.dashOn && !this.isMoving && this.hasDashMoved) {
-      this.dashOn = false;
-      this.hasDashMoved = false;
+    // Attack cooldown
+    if (this.attackCooldownTimer > 0) {
+      this.attackCooldownTimer -= dtMs;
     }
 
-    // Gravity & jump (vertical)
-    this.velocityY += this.gravity * dt;
-    const prevY = this.collider.position.y;
-    this.collider.moveWithCollisions(new Vector3(0, this.velocityY * dt, 0));
-    this.mesh.position.y = this.collider.position.y;
+    this.updateMovement(dtMs);
+    this.updateJump(dtMs);
+    this.updateAttack();
+  }
 
-    // Ground detection: if vertical movement was blocked (or on ground)
-    if (this.collider.position.y <= 0) {
-      this.collider.position.y = 0;
-      this.mesh.position.y = 0;
-      this.velocityY = 0;
-      this.isGrounded = true;
-    } else if (Math.abs(this.collider.position.y - prevY) < Math.abs(this.velocityY * dt) * 0.5 && this.velocityY < 0) {
-      // Hit something below (collision stopped the fall)
-      this.velocityY = 0;
-      this.isGrounded = true;
+  private updateMovement(dtMs: number): void {
+    const body = this.body;
+
+    if (this.input.left) {
+      body.setAccelerationX(-PLAYER_ACCELERATION);
+      this.sprite.setFlipX(true);
+      this.facingRight = false;
+    } else if (this.input.right) {
+      body.setAccelerationX(PLAYER_ACCELERATION);
+      this.sprite.setFlipX(false);
+      this.facingRight = true;
     } else {
-      this.isGrounded = false;
+      body.setAccelerationX(0);
+      body.setDragX(PLAYER_DECELERATION);
     }
 
-    // Smooth rotation
-    const current = this.mesh.rotation.y;
-    let diff = this.targetRotation - current;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    this.mesh.rotation.y += diff * Math.min(1, dt * 10);
-
-    // Animate limbs
-    this.animateLimbs(dt);
-  }
-
-  jump(): void {
-    if (this.isGrounded) {
-      this.velocityY = this.jumpForce;
-      this.isGrounded = false;
+    // Clamp horizontal speed
+    if (Math.abs(body.velocity.x) > this.speed) {
+      body.velocity.x = Phaser.Math.Clamp(body.velocity.x, -this.speed, this.speed);
     }
   }
 
-  private animateLimbs(dt: number): void {
-    if (this.isMoving && this.isGrounded) {
-      // Advance walk cycle (faster when dashing, slower when exhausted)
-      let animMult = 1;
-      if (this.staminaState === "exhausted") animMult = 0.5;
-      else if (this.dashOn && this.staminaState === "normal" && this.stamina > 0) animMult = 1.6;
-      this.walkPhase += WALK_ANIM_SPEED * animMult * dt;
-      const s = Math.sin(this.walkPhase);
+  private updateJump(dtMs: number): void {
+    const body = this.body;
 
-      // Arms swing opposite to legs
-      this.leftShoulder.rotation.x = s * ARM_SWING;
-      this.rightShoulder.rotation.x = -s * ARM_SWING;
+    // Ground check
+    this.wasGrounded = this.isGrounded;
+    this.isGrounded = body.blocked.down;
 
-      // Legs
-      this.leftHip.rotation.x = -s * LEG_SWING;
-      this.rightHip.rotation.x = s * LEG_SWING;
-
-      // Head bob (double frequency)
-      this.headNode.position.y = 1.3 + Math.abs(Math.sin(this.walkPhase * 2)) * HEAD_BOB_AMOUNT;
-    } else {
-      // Return to rest pose smoothly
-      const r = Math.min(1, dt * ANIM_RETURN_SPEED);
-      this.leftShoulder.rotation.x *= (1 - r);
-      this.rightShoulder.rotation.x *= (1 - r);
-      this.leftHip.rotation.x *= (1 - r);
-      this.rightHip.rotation.x *= (1 - r);
-      this.headNode.position.y += (1.3 - this.headNode.position.y) * r;
-
-      // Reset walk phase when stopped to start clean next time
-      if (Math.abs(this.leftHip.rotation.x) < 0.01) {
-        this.walkPhase = 0;
-      }
+    // Coyote time: fell off edge (not jumped)
+    if (this.wasGrounded && !this.isGrounded && !this.isJumping) {
+      this.coyoteTimer = COYOTE_TIME_MS;
     }
-
-    // In-air: tuck legs slightly forward
     if (!this.isGrounded) {
-      const tuck = 0.3;
-      const r = Math.min(1, dt * 6);
-      this.leftHip.rotation.x += (tuck - this.leftHip.rotation.x) * r;
-      this.rightHip.rotation.x += (tuck - this.rightHip.rotation.x) * r;
-      // Arms up slightly
-      this.leftShoulder.rotation.x += (-0.4 - this.leftShoulder.rotation.x) * r;
-      this.rightShoulder.rotation.x += (-0.4 - this.rightShoulder.rotation.x) * r;
+      this.coyoteTimer = Math.max(0, this.coyoteTimer - dtMs);
+    }
+
+    // Jump buffer
+    this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dtMs);
+
+    // Landing
+    if (this.isGrounded && !this.wasGrounded) {
+      this.isJumping = false;
+      this.airJumpsRemaining = this.maxAirJumps;
+      if (this.jumpBufferTimer > 0) {
+        this.executeJump();
+        this.jumpBufferTimer = 0;
+      }
+    }
+
+    // Jump input
+    if (this.input.consumeJump()) {
+      const canJump = this.isGrounded || this.coyoteTimer > 0;
+      if (canJump) {
+        this.executeJump();
+      } else if (this.airJumpsRemaining > 0) {
+        this.executeAirJump();
+      } else {
+        this.jumpBufferTimer = JUMP_BUFFER_MS;
+      }
+    }
+
+    // Variable jump height: release early = shorter jump
+    if (this.isJumping && !this.input.jumpHeld && body.velocity.y < 0) {
+      body.velocity.y *= VARIABLE_JUMP_MULTIPLIER;
+      this.isJumping = false;
     }
   }
 
-  /* ---- Stamina state machine ---- */
+  private executeJump(): void {
+    this.body.velocity.y = PLAYER_JUMP_VELOCITY;
+    this.isJumping = true;
+    this.coyoteTimer = 0;
+    this.isGrounded = false;
+  }
 
-  private updateStamina(dt: number): void {
-    switch (this.staminaState) {
-      case "normal":
-        if (this.dashOn && this.isMoving && this.stamina > 0) {
-          // Drain stamina while dash-moving
-          this.stamina -= STAMINA_DRAIN_RATE * dt;
-          if (this.stamina <= 0) {
-            this.stamina = 0;
-            // Enter exhausted state
-            this.staminaState = "exhausted";
-            this.exhaustTimer = EXHAUST_DURATION;
-          }
-        } else if (!this.dashOn && this.stamina < MAX_STAMINA) {
-          // Recover when not dashing
-          this.stamina = Math.min(MAX_STAMINA, this.stamina + STAMINA_RECOVER_RATE * dt);
-        }
+  private executeAirJump(): void {
+    this.body.velocity.y = PLAYER_JUMP_VELOCITY * 0.85;
+    this.airJumpsRemaining--;
+    this.isJumping = true;
+    deathBurst(this.scene, this.sprite.x, this.sprite.y, 0x4488ff);
+  }
+
+  private updateAttack(): void {
+    if (!this.input.consumeAttack()) return;
+    if (this.attackCooldownTimer > 0) return;
+
+    this.attackCooldownTimer = ATTACK_COOLDOWN_MS;
+
+    const dirX = this.facingRight ? 1 : -1;
+    const hitboxX = this.sprite.x + dirX * (ATTACK_RANGE / 2 + 4);
+    const hitboxY = this.sprite.y - 16;
+
+    // Visual feedback
+    const visual = this.scene.add.sprite(hitboxX, hitboxY, "attack-hitbox");
+    visual.setAlpha(0.6);
+    visual.setFlipX(!this.facingRight);
+
+    // Physics hitbox
+    const hitbox = this.scene.add.zone(hitboxX, hitboxY, ATTACK_RANGE, 32);
+    this.scene.physics.add.existing(hitbox, false);
+    (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+
+    // Emit attack event with hitbox and damage info
+    this.scene.events.emit("player-attack", hitbox, this.attackDamage);
+
+    this.scene.time.delayedCall(ATTACK_DURATION_MS, () => {
+      visual.destroy();
+      hitbox.destroy();
+    });
+  }
+
+  applyEvolution(type: EvolutionType): void {
+    this.evolution = type;
+    switch (type) {
+      case "wings":
+        this.maxAirJumps = WING_EVOLUTION_EXTRA_JUMPS;
+        this.airJumpsRemaining = this.maxAirJumps;
+        this.sprite.setTexture("player-wings");
         break;
-
-      case "exhausted":
-        // Blue bar counts down
-        this.exhaustTimer -= dt;
-        if (this.exhaustTimer <= 0) {
-          this.exhaustTimer = 0;
-          // Enter recovery state: red bar refills from 0
-          this.staminaState = "recovery";
-          this.stamina = 0;
-        }
+      case "power":
+        this.attackDamage = ATTACK_DAMAGE * POWER_EVOLUTION_DAMAGE_MULT;
+        this.sprite.setTint(0xff6666);
         break;
-
-      case "recovery":
-        // Red bar fills up at moderate speed
-        this.stamina += RED_REFILL_RATE * dt;
-        if (this.stamina >= MAX_STAMINA) {
-          this.stamina = MAX_STAMINA;
-          this.staminaState = "normal";
-        }
+      case "speed":
+        this.speed = PLAYER_SPEED * SPEED_EVOLUTION_SPEED_MULT;
+        this.sprite.setTint(0x6666ff);
         break;
     }
   }
 
-  /** Normalized 0-1 for UI gauge */
-  get staminaRatio(): number { return this.stamina / MAX_STAMINA; }
-  get exhaustRatio(): number { return this.exhaustTimer / EXHAUST_DURATION; }
-
-  getPosition(): Vector3 {
-    return this.mesh.position;
+  takeDamage(source: DeathCause): void {
+    if (this.invincibleTimer > 0) return;
+    this.lastDamageSource = source;
+    this.scene.events.emit("player-hit", source);
   }
 
-  /** Get full state for network sync */
-  getNetworkState(): {
-    position: { x: number; y: number; z: number };
-    rotationY: number;
-    velocityY: number;
-    stamina: number;
-    staminaState: StaminaState;
-    dashOn: boolean;
-    isMoving: boolean;
-  } {
-    return {
-      position: {
-        x: this.mesh.position.x,
-        y: this.mesh.position.y,
-        z: this.mesh.position.z,
-      },
-      rotationY: this.mesh.rotation.y,
-      velocityY: this.velocityY,
-      stamina: this.stamina,
-      staminaState: this.staminaState,
-      dashOn: this.dashOn,
-      isMoving: this.isMoving,
-    };
+  respawnAt(x: number, y: number): void {
+    this.sprite.setPosition(x, y);
+    this.body.setVelocity(0, 0);
+    this.isJumping = false;
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+    this.invincibleTimer = 1500;
+    this.sprite.setAlpha(0.5);
+  }
+
+  getEvolution(): EvolutionType | null {
+    return this.evolution;
   }
 }

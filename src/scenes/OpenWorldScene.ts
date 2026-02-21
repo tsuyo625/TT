@@ -133,6 +133,14 @@ export class OpenWorldScene {
     return params.get("server") || "https://openworld-quic.fly.dev:443/game";
   }
 
+  private getWsUrl(): string {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("ws")) return params.get("ws")!;
+    // Derive WS URL from page origin
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}/ws/game`;
+  }
+
   private async initNetwork(): Promise<void> {
     // Initialize chat UI (available in both online and offline modes)
     this.chatUI = new ChatUI();
@@ -141,15 +149,9 @@ export class OpenWorldScene {
     // Initialize mini-game system
     this.initMiniGames();
 
-    // Check WebTransport support (unavailable on iOS / older browsers)
-    if (typeof WebTransport === "undefined") {
-      console.warn("[OpenWorldScene] WebTransport not supported - running in offline mode");
-      this.chatUI.addSystemMessage("オフラインモード（この環境はマルチプレイ非対応です）");
-      return;
-    }
-
     const serverUrl = this.getServerUrl();
-    console.log(`[OpenWorldScene] Connecting to ${serverUrl}...`);
+    const wsUrl = this.getWsUrl();
+    console.log(`[OpenWorldScene] Connecting to ${serverUrl} (ws fallback: ${wsUrl})...`);
 
     // Certificate hashes for self-signed certs (valid 14 days max for WebTransport)
     // Regenerate with: openssl x509 -in certs/cert.pem -outform DER | openssl dgst -sha256 -binary | base64
@@ -159,6 +161,7 @@ export class OpenWorldScene {
 
     this.networkManager = new NetworkManager({
       serverUrl,
+      wsUrl,
       reconnectAttempts: 5,
       reconnectDelayMs: 2000,
       certHash: isLocalhost ? localCertHash : flyioCertHash,
@@ -173,7 +176,7 @@ export class OpenWorldScene {
     // Connect (async, don't block init)
     this.networkManager.connect().catch((err) => {
       console.error("[OpenWorldScene] Initial connection failed:", err);
-      this.chatUI?.addSystemMessage("Connection failed - retrying...");
+      this.chatUI?.addSystemMessage("接続失敗 - リトライ中...");
     });
   }
 

@@ -12,11 +12,17 @@ const DEFAULT_RECONNECT_DELAY_MS = 2000;
 
 export class NetworkManager {
   private config: NetworkConfig;
+
+  // WebTransport state
   private transport: WebTransport | null = null;
   private bidiWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private bidiReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private datagramWriter: WritableStreamDefaultWriter<Uint8Array> | null =
-    null;
+  private datagramWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+
+  // WebSocket state
+  private ws: WebSocket | null = null;
+  private useWebSocket = false;
+
   private connected = false;
   private reconnecting = false;
   private reconnectAttempt = 0;
@@ -36,81 +42,181 @@ export class NetworkManager {
   async connect(): Promise<void> {
     if (this.destroyed) return;
 
-    try {
-      console.log(`[Network] Connecting to ${this.config.serverUrl}...`);
+    // Try WebTransport first, fall back to WebSocket
+    if (typeof WebTransport !== "undefined" && !this.useWebSocket) {
+      try {
+        await this.connectWebTransport();
+        return;
+      } catch (error) {
+        console.warn("[Network] WebTransport failed, trying WebSocket fallback...", error);
+        this.cleanup();
+        this.useWebSocket = true;
+      }
+    }
 
-      // Build WebTransport options
-      const options: WebTransportOptions = {};
+    await this.connectWebSocket();
+  }
 
-      // Use certificate hash for self-signed certs in development
-      if (this.config.certHash) {
-        const hashBytes = Uint8Array.from(atob(this.config.certHash), (c) =>
-          c.charCodeAt(0)
-        );
-        options.serverCertificateHashes = [
-          {
-            algorithm: "sha-256",
-            value: hashBytes.buffer,
-          },
-        ];
-        const hashHex = Array.from(hashBytes)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join(":");
-        console.log("[Network] Using certificate hash for self-signed cert");
-        console.log("[Network] Hash:", hashHex);
+  // ─── WebTransport ────────────────────────────────────────
+
+  private async connectWebTransport(): Promise<void> {
+    console.log(`[Network] Connecting via WebTransport to ${this.config.serverUrl}...`);
+
+    const options: WebTransportOptions = {};
+
+    if (this.config.certHash) {
+      const hashBytes = Uint8Array.from(atob(this.config.certHash), (c) =>
+        c.charCodeAt(0)
+      );
+      options.serverCertificateHashes = [
+        { algorithm: "sha-256", value: hashBytes.buffer },
+      ];
+      console.log("[Network] Using certificate hash for self-signed cert");
+    }
+
+    this.transport = new WebTransport(this.config.serverUrl, options);
+    await this.transport.ready;
+
+    this.connected = true;
+    this.reconnectAttempt = 0;
+
+    console.log(`[Network] WebTransport ready, waiting for server welcome...`);
+
+    const bidiStream = await this.transport.createBidirectionalStream();
+    this.bidiWriter = bidiStream.writable.getWriter();
+    this.bidiReader = bidiStream.readable.getReader();
+    this.datagramWriter = this.transport.datagrams.writable.getWriter();
+
+    this.handleDatagrams();
+    this.handleBidiMessages();
+    this.handleUnidirectionalStreams();
+
+    this.transport.closed
+      .then(() => this.handleDisconnect("Connection closed"))
+      .catch((err) => this.handleDisconnect(`Connection error: ${err.message}`));
+  }
+
+  // ─── WebSocket fallback ──────────────────────────────────
+
+  private connectWebSocket(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const wsUrl = this.config.wsUrl;
+      if (!wsUrl) {
+        reject(new Error("No WebSocket URL configured"));
+        return;
       }
 
-      this.transport = new WebTransport(this.config.serverUrl, options);
-      await this.transport.ready;
+      console.log(`[Network] Connecting via WebSocket to ${wsUrl}...`);
 
-      this.connected = true;
-      this.reconnectAttempt = 0;
-      // localPlayerId will be set by server's welcome message
+      const ws = new WebSocket(wsUrl);
+      ws.binaryType = "arraybuffer";
+      this.ws = ws;
 
-      console.log(`[Network] Transport ready, waiting for server welcome...`);
+      ws.onopen = () => {
+        this.connected = true;
+        this.reconnectAttempt = 0;
+        console.log("[Network] WebSocket connected, waiting for server welcome...");
+        resolve();
+      };
 
-      // Open bidirectional stream for reliable messaging
-      const bidiStream = await this.transport.createBidirectionalStream();
-      this.bidiWriter = bidiStream.writable.getWriter();
-      this.bidiReader = bidiStream.readable.getReader();
+      ws.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          // Binary = state broadcast
+          const data = new Uint8Array(event.data);
+          const players = this.parseStateDatagram(data);
+          if (players.size > 0) {
+            this.onEvent?.({ type: "state_update", players, serverTime: Date.now() });
+          }
+        } else {
+          // Text = JSON broadcast
+          try {
+            const message: IncomingBroadcast = JSON.parse(event.data);
+            this.handleBroadcast(message);
+          } catch {
+            // Invalid JSON
+          }
+        }
+      };
 
-      // Get datagram writer for position updates
-      this.datagramWriter = this.transport.datagrams.writable.getWriter();
+      ws.onclose = () => {
+        this.handleDisconnect("WebSocket closed");
+      };
 
-      // Start reading datagrams (state broadcasts)
-      this.handleDatagrams();
-
-      // Start reading bidirectional messages
-      this.handleBidiMessages();
-
-      // Start reading unidirectional streams (broadcasts)
-      this.handleUnidirectionalStreams();
-
-      // Handle connection close
-      this.transport.closed
-        .then(() => {
-          this.handleDisconnect("Connection closed");
-        })
-        .catch((err) => {
-          this.handleDisconnect(`Connection error: ${err.message}`);
-        });
-    } catch (error) {
-      console.error("[Network] Connection failed:", error);
-      this.handleDisconnect(
-        `Failed to connect: ${error instanceof Error ? error.message : String(error)}`
-      );
-      throw error;
-    }
+      ws.onerror = (err) => {
+        if (!this.connected) {
+          reject(err);
+        }
+        // handleDisconnect will be called by onclose
+      };
+    });
   }
+
+  // ─── Public send methods ─────────────────────────────────
 
   disconnect(): void {
     this.destroyed = true;
     this.cleanup();
   }
 
+  /** Send local player position (binary) */
+  sendPosition(x: number, y: number, z: number, rotY: number): void {
+    if (!this.connected) return;
+
+    const buffer = new ArrayBuffer(25);
+    const view = new DataView(buffer);
+    view.setUint8(0, PACKET_POSITION);
+    view.setFloat32(1, x, true);
+    view.setFloat32(5, y, true);
+    view.setFloat32(9, z, true);
+    view.setFloat32(13, 0, true);
+    view.setFloat32(17, rotY, true);
+    view.setFloat32(21, 0, true);
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(buffer);
+    } else if (this.datagramWriter) {
+      this.datagramWriter.write(new Uint8Array(buffer)).catch(() => {});
+    }
+  }
+
+  /** Send chat message (JSON) */
+  async sendChat(message: string): Promise<void> {
+    await this.sendJson({ type: "chat", message, id: Date.now() });
+  }
+
+  /** Set player name (JSON) */
+  async setName(name: string): Promise<void> {
+    await this.sendJson({ type: "set_name", name, id: Date.now() });
+  }
+
+  /** Send game action (JSON) */
+  async sendAction(action: string, params: unknown): Promise<void> {
+    await this.sendJson({ type: "action", action, params, id: Date.now() });
+  }
+
+  get isConnected(): boolean {
+    return this.connected;
+  }
+
+  // ─── Internal helpers ────────────────────────────────────
+
+  private async sendJson(obj: unknown): Promise<void> {
+    if (!this.connected) return;
+
+    const data = JSON.stringify(obj);
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    } else if (this.bidiWriter) {
+      const encoded = new TextEncoder().encode(data);
+      await this.bidiWriter.write(encoded);
+    }
+  }
+
   private cleanup(): void {
     this.connected = false;
 
+    // WebTransport cleanup
     if (this.bidiWriter) {
       this.bidiWriter.close().catch(() => {});
       this.bidiWriter = null;
@@ -127,6 +233,13 @@ export class NetworkManager {
       this.transport.close();
       this.transport = null;
     }
+
+    // WebSocket cleanup
+    if (this.ws) {
+      this.ws.onclose = null; // prevent re-triggering handleDisconnect
+      this.ws.close();
+      this.ws = null;
+    }
   }
 
   private handleDisconnect(reason: string): void {
@@ -135,7 +248,6 @@ export class NetworkManager {
     this.cleanup();
     this.onEvent?.({ type: "disconnected", reason });
 
-    // Attempt reconnection
     if (!this.destroyed) {
       this.attemptReconnect();
     }
@@ -170,69 +282,8 @@ export class NetworkManager {
     }
   }
 
-  /** Send local player position via datagram (call every frame) */
-  sendPosition(x: number, y: number, z: number, rotY: number): void {
-    if (!this.connected || !this.datagramWriter) return;
+  // ─── WebTransport-specific readers ───────────────────────
 
-    const buffer = new ArrayBuffer(25);
-    const view = new DataView(buffer);
-    view.setUint8(0, PACKET_POSITION);
-    view.setFloat32(1, x, true);
-    view.setFloat32(5, y, true);
-    view.setFloat32(9, z, true);
-    view.setFloat32(13, 0, true); // rotX (unused)
-    view.setFloat32(17, rotY, true);
-    view.setFloat32(21, 0, true); // rotZ (unused)
-
-    this.datagramWriter.write(new Uint8Array(buffer)).catch(() => {
-      // Datagram dropped, expected behavior
-    });
-  }
-
-  /** Send chat message via reliable stream */
-  async sendChat(message: string): Promise<void> {
-    if (!this.connected || !this.bidiWriter) return;
-
-    const data = JSON.stringify({
-      type: "chat",
-      message,
-      id: Date.now(),
-    });
-
-    const encoded = new TextEncoder().encode(data);
-    await this.bidiWriter.write(encoded);
-  }
-
-  /** Set player name via reliable stream */
-  async setName(name: string): Promise<void> {
-    if (!this.connected || !this.bidiWriter) return;
-
-    const data = JSON.stringify({
-      type: "set_name",
-      name,
-      id: Date.now(),
-    });
-
-    const encoded = new TextEncoder().encode(data);
-    await this.bidiWriter.write(encoded);
-  }
-
-  /** Send game action via reliable stream */
-  async sendAction(action: string, params: unknown): Promise<void> {
-    if (!this.connected || !this.bidiWriter) return;
-
-    const data = JSON.stringify({
-      type: "action",
-      action,
-      params,
-      id: Date.now(),
-    });
-
-    const encoded = new TextEncoder().encode(data);
-    await this.bidiWriter.write(encoded);
-  }
-
-  /** Handle incoming datagrams (state broadcasts from server) */
   private async handleDatagrams(): Promise<void> {
     if (!this.transport) return;
 
@@ -245,11 +296,7 @@ export class NetworkManager {
 
         const players = this.parseStateDatagram(value);
         if (players.size > 0) {
-          this.onEvent?.({
-            type: "state_update",
-            players,
-            serverTime: Date.now(),
-          });
+          this.onEvent?.({ type: "state_update", players, serverTime: Date.now() });
         }
       }
     } catch (err) {
@@ -261,7 +308,6 @@ export class NetworkManager {
     }
   }
 
-  /** Handle incoming bidirectional stream messages */
   private async handleBidiMessages(): Promise<void> {
     if (!this.bidiReader) return;
 
@@ -274,7 +320,6 @@ export class NetworkManager {
 
         try {
           const message = JSON.parse(decoder.decode(value));
-          // Handle ack, pong, full_state, error responses
           console.log("[Network] BiDi message:", message.type);
         } catch {
           // Invalid JSON
@@ -287,7 +332,6 @@ export class NetworkManager {
     }
   }
 
-  /** Handle incoming unidirectional streams (broadcasts) */
   private async handleUnidirectionalStreams(): Promise<void> {
     if (!this.transport) return;
 
@@ -298,8 +342,6 @@ export class NetworkManager {
       while (true) {
         const { value: stream, done } = await reader.read();
         if (done) break;
-
-        // Read each stream
         this.readUnidirectionalStream(stream, decoder);
       }
     } catch (err) {
@@ -342,10 +384,11 @@ export class NetworkManager {
     }
   }
 
+  // ─── Shared message handling ─────────────────────────────
+
   private handleBroadcast(message: IncomingBroadcast): void {
     switch (message.type) {
       case "welcome":
-        // Server assigned our ID
         this.localPlayerId = message.playerId;
         console.log(`[Network] Connected! Server assigned ID: ${this.localPlayerId}`);
         this.onEvent?.({ type: "connected", localPlayerId: this.localPlayerId });
@@ -386,7 +429,7 @@ export class NetworkManager {
     }
   }
 
-  /** Parse state broadcast datagram (0xFF packet) */
+  /** Parse state broadcast (0xFF binary packet) */
   private parseStateDatagram(data: Uint8Array): Map<string, RemotePlayerState> {
     const players = new Map<string, RemotePlayerState>();
 
@@ -405,7 +448,6 @@ export class NetworkManager {
     for (let i = 0; i < playerCount; i++) {
       if (offset + 72 > data.length) break;
 
-      // Read player ID (36 bytes)
       const idBytes = data.slice(offset, offset + 36);
       const playerId = new TextDecoder()
         .decode(idBytes)
@@ -413,7 +455,6 @@ export class NetworkManager {
         .trim();
       offset += 36;
 
-      // Position (12 bytes)
       const position = {
         x: view.getFloat32(offset, true),
         y: view.getFloat32(offset + 4, true),
@@ -421,7 +462,6 @@ export class NetworkManager {
       };
       offset += 12;
 
-      // Rotation (12 bytes)
       const rotation = {
         x: view.getFloat32(offset, true),
         y: view.getFloat32(offset + 4, true),
@@ -429,7 +469,6 @@ export class NetworkManager {
       };
       offset += 12;
 
-      // Velocity (12 bytes)
       const velocity = {
         x: view.getFloat32(offset, true),
         y: view.getFloat32(offset + 4, true),
@@ -447,9 +486,5 @@ export class NetworkManager {
     }
 
     return players;
-  }
-
-  get isConnected(): boolean {
-    return this.connected;
   }
 }

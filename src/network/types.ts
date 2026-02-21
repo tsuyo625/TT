@@ -136,6 +136,8 @@ export type IncomingBroadcast =
 // Network config
 export interface NetworkConfig {
   serverUrl: string;
+  /** WebSocket fallback URL (used when WebTransport is unavailable) */
+  wsUrl?: string;
   reconnectAttempts?: number;
   reconnectDelayMs?: number;
   /** Base64-encoded SHA-256 certificate hash for self-signed certs */

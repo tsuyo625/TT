@@ -134,6 +134,20 @@ export class OpenWorldScene {
   }
 
   private async initNetwork(): Promise<void> {
+    // Initialize chat UI (available in both online and offline modes)
+    this.chatUI = new ChatUI();
+    this.chatUI.mount();
+
+    // Initialize mini-game system
+    this.initMiniGames();
+
+    // Check WebTransport support (unavailable on iOS / older browsers)
+    if (typeof WebTransport === "undefined") {
+      console.warn("[OpenWorldScene] WebTransport not supported - running in offline mode");
+      this.chatUI.addSystemMessage("オフラインモード（この環境はマルチプレイ非対応です）");
+      return;
+    }
+
     const serverUrl = this.getServerUrl();
     console.log(`[OpenWorldScene] Connecting to ${serverUrl}...`);
 
@@ -152,15 +166,9 @@ export class OpenWorldScene {
 
     this.networkManager.onEvent = (event) => this.handleNetworkEvent(event);
 
-    // Initialize chat UI
-    this.chatUI = new ChatUI();
-    this.chatUI.mount();
     this.chatUI.setOnSend((message) => {
       this.networkManager?.sendChat(message);
     });
-
-    // Initialize mini-game system
-    this.initMiniGames();
 
     // Connect (async, don't block init)
     this.networkManager.connect().catch((err) => {

@@ -123,6 +123,7 @@ export class JoinDialog {
     // Event handlers
     const submit = () => {
       const name = this.input?.value.trim() || "Player";
+      localStorage.setItem("playerName", name);
       this.unmount();
       this.resolvePromise?.(name);
     };
@@ -140,6 +141,12 @@ export class JoinDialog {
     dialog.appendChild(button);
     this.container.appendChild(dialog);
     document.body.appendChild(this.container);
+
+    // Restore saved name
+    const saved = localStorage.getItem("playerName");
+    if (saved && this.input) {
+      this.input.value = saved;
+    }
 
     // Focus input
     setTimeout(() => this.input?.focus(), 100);

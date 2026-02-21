@@ -65,7 +65,7 @@ export class Engine {
       this.scene
     );
     this.thirdPersonCam.lowerBetaLimit = 0.3;
-    this.thirdPersonCam.upperBetaLimit = Math.PI / 2.5;
+    this.thirdPersonCam.upperBetaLimit = Math.PI / 2;
     this.thirdPersonCam.lowerRadiusLimit = 6;
     this.thirdPersonCam.upperRadiusLimit = 60;
     // Disable all built-in pointer inputs (we handle camera via InputManager)

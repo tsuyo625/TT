@@ -764,7 +764,7 @@ export class OpenWorldScene {
       cam.alpha -= camDelta.dx * CAMERA_SENSITIVITY;
       cam.beta -= camDelta.dy * CAMERA_SENSITIVITY;
       // Clamp beta
-      cam.beta = Math.max(cam.lowerBetaLimit ?? 0.3, Math.min(cam.upperBetaLimit ?? Math.PI / 2.5, cam.beta));
+      cam.beta = Math.max(cam.lowerBetaLimit ?? 0.3, Math.min(cam.upperBetaLimit ?? Math.PI / 2, cam.beta));
     }
 
     cam.target.set(pos.x, pos.y + 1, pos.z);
@@ -778,7 +778,7 @@ export class OpenWorldScene {
       this.fpsYaw += camDelta.dx * FPS_YAW_SENSITIVITY;
       this.fpsPitch -= camDelta.dy * FPS_PITCH_SENSITIVITY;
       // Clamp pitch
-      this.fpsPitch = Math.max(-1.2, Math.min(1.2, this.fpsPitch));
+      this.fpsPitch = Math.max(-1.5, Math.min(1.5, this.fpsPitch));
     }
 
     // Position camera at player head (accounts for jump height)

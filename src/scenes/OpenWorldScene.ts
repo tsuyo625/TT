@@ -13,6 +13,9 @@ import { RemotePlayer } from "../entities/RemotePlayer";
 import { NetworkEvent, RemotePlayerState } from "../network/types";
 import { ChatUI } from "../ui/ChatUI";
 import { JoinDialog } from "../ui/JoinDialog";
+import { MiniGameManager } from "../minigame/MiniGameManager";
+import { MiniGameCallbacks } from "../minigame/MiniGame";
+import { GameLobbyUI } from "../ui/GameLobbyUI";
 
 const CAMERA_SENSITIVITY = 0.012;
 const FPS_YAW_SENSITIVITY = 0.01;
@@ -36,6 +39,10 @@ export class OpenWorldScene {
   private playerNames: Map<string, string> = new Map();
   private chatUI: ChatUI | null = null;
   private localPlayerName: string = "Player";
+
+  // Mini-games
+  private miniGameManager: MiniGameManager | null = null;
+  private gameLobbyUI: GameLobbyUI | null = null;
 
   // First-person camera state
   private fpsYaw = 0;
@@ -139,10 +146,72 @@ export class OpenWorldScene {
       this.networkManager?.sendChat(message);
     });
 
+    // Initialize mini-game system
+    this.initMiniGames();
+
     // Connect (async, don't block init)
     this.networkManager.connect().catch((err) => {
       console.error("[OpenWorldScene] Initial connection failed:", err);
       this.chatUI?.addSystemMessage("Connection failed - retrying...");
+    });
+  }
+
+  private initMiniGames(): void {
+    const callbacks: MiniGameCallbacks = {
+      getLocalPosition: () => {
+        const pos = this.player.getPosition();
+        return { x: pos.x, y: pos.y, z: pos.z };
+      },
+      getRemotePositions: () => {
+        const result = new Map<string, { x: number; y: number; z: number }>();
+        for (const [id, remote] of this.remotePlayers) {
+          const pos = remote.mesh.position;
+          result.set(id, { x: pos.x, y: pos.y, z: pos.z });
+        }
+        return result;
+      },
+      sendAction: (action: string, params: unknown) => {
+        this.networkManager?.sendAction(action, params);
+      },
+      showMessage: (msg: string) => {
+        this.chatUI?.addSystemMessage(msg);
+      },
+      getLocalPlayerId: () => {
+        return this.networkManager?.localPlayerId ?? null;
+      },
+      getPlayerName: (id: string) => {
+        return this.playerNames.get(id) ?? id.slice(0, 8);
+      },
+    };
+
+    this.miniGameManager = new MiniGameManager(callbacks);
+
+    this.gameLobbyUI = new GameLobbyUI({
+      getAvailableGames: () => this.miniGameManager!.getAvailableGames(),
+      getConnectedPlayerIds: () => {
+        const ids: string[] = [];
+        const localId = this.networkManager?.localPlayerId;
+        if (localId) ids.push(localId);
+        for (const id of this.remotePlayers.keys()) {
+          ids.push(id);
+        }
+        return ids;
+      },
+      getPlayerName: (id: string) => this.playerNames.get(id) ?? id.slice(0, 8),
+      getLocalPlayerId: () => this.networkManager?.localPlayerId ?? null,
+      onStartGame: (gameId: string, players: string[]) => {
+        const hostId = this.networkManager?.localPlayerId;
+        if (!hostId) return;
+        // Broadcast to all players
+        this.networkManager?.sendAction("minigame_start", { gameId, players, hostId });
+        // Start locally
+        this.miniGameManager?.startGame(gameId, players, hostId);
+      },
+      isPlaying: () => this.miniGameManager?.isPlaying() ?? false,
+      onStopGame: () => {
+        this.networkManager?.sendAction("minigame_stop", {});
+        this.miniGameManager?.stopCurrentGame();
+      },
     });
   }
 
@@ -199,6 +268,14 @@ export class OpenWorldScene {
         {
           const name = this.playerNames.get(event.playerId) || event.playerId.slice(0, 8);
           this.chatUI?.addMessage(name, event.message, event.timestamp);
+        }
+        break;
+
+      case "action":
+        this.miniGameManager?.handleAction(event.playerId, event.action, event.params);
+        // If a game ended externally, update lobby button
+        if (event.action === "minigame_stop" && this.gameLobbyUI) {
+          this.gameLobbyUI.onGameEnded();
         }
         break;
     }
@@ -510,6 +587,15 @@ export class OpenWorldScene {
 
     // Network: send position and update remote players
     this.updateNetwork(dt);
+
+    // Mini-game update
+    if (this.miniGameManager) {
+      const wasPlaying = this.miniGameManager.isPlaying();
+      this.miniGameManager.update(dt);
+      if (wasPlaying && !this.miniGameManager.isPlaying()) {
+        this.gameLobbyUI?.onGameEnded();
+      }
+    }
 
     if (this.isTransitioning) {
       this.updateTransition(dt, pos);

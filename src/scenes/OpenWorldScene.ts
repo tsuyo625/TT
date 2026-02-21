@@ -1,17 +1,22 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Engine, ViewMode } from "../core/Engine";
 import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
 import { OpenWorld, DoorInfo, ElevatorInfo, BuildingBounds } from "../world/OpenWorld";
 import { Animal, AnimalKind } from "../entities/Animal";
-import { GiantCreature } from "../entities/GiantCreature";
+import { GiantCreature, GiantCreatureOpts } from "../entities/GiantCreature";
+import { AssetFactory } from "../core/AssetFactory";
 import { NetworkManager } from "../network/NetworkManager";
 import { RemotePlayer } from "../entities/RemotePlayer";
-import { NetworkEvent, RemotePlayerState } from "../network/types";
+import { NetworkEvent, NpcState, RemotePlayerState } from "../network/types";
 import { ChatUI } from "../ui/ChatUI";
 import { JoinDialog } from "../ui/JoinDialog";
+import { MiniGameManager } from "../minigame/MiniGameManager";
+import { MiniGameCallbacks } from "../minigame/MiniGame";
+import { GameLobbyUI } from "../ui/GameLobbyUI";
 
 const CAMERA_SENSITIVITY = 0.012;
 const FPS_YAW_SENSITIVITY = 0.01;
@@ -27,7 +32,7 @@ export class OpenWorldScene {
   private player!: Player;
   private world!: OpenWorld;
   private animals: Animal[] = [];
-  private giantCreature: GiantCreature | null = null;
+  private giantCreatures: GiantCreature[] = [];
 
   // Multiplayer
   private networkManager: NetworkManager | null = null;
@@ -35,6 +40,20 @@ export class OpenWorldScene {
   private playerNames: Map<string, string> = new Map();
   private chatUI: ChatUI | null = null;
   private localPlayerName: string = "Player";
+
+  // Mini-games
+  private miniGameManager: MiniGameManager | null = null;
+  private gameLobbyUI: GameLobbyUI | null = null;
+  private cpuMeshes: Map<string, {
+    root: TransformNode;
+    leftShoulder: TransformNode;
+    rightShoulder: TransformNode;
+    leftHip: TransformNode;
+    rightHip: TransformNode;
+    prevX: number;
+    prevZ: number;
+    walkPhase: number;
+  }> = new Map();
 
   // First-person camera state
   private fpsYaw = 0;
@@ -70,15 +89,22 @@ export class OpenWorldScene {
     this.input = input;
   }
 
-  init(): void {
+  async init(): Promise<void> {
     const scene = this.engine.scene;
 
     this.world = new OpenWorld(scene, this.engine.shadowGenerator);
 
+    // Show join dialog first to get name and color
+    const joinDialog = new JoinDialog();
+    const joinResult = await joinDialog.show();
+    this.localPlayerName = joinResult.name;
+    const playerColor = new Color3(joinResult.color.r, joinResult.color.g, joinResult.color.b);
+    console.log(`[OpenWorldScene] Player: ${this.localPlayerName}, color: ${playerColor}`);
+
     this.player = new Player(
       scene,
       this.input,
-      new Color3(0.2, 0.6, 0.85),
+      playerColor,
       0, 8
     );
 
@@ -96,7 +122,7 @@ export class OpenWorldScene {
 
     this.createUI();
 
-    // Initialize network
+    // Initialize network (no longer shows dialog)
     this.initNetwork();
 
     this.engine.onUpdate((dt) => this.update(dt));
@@ -107,14 +133,25 @@ export class OpenWorldScene {
     return params.get("server") || "https://openworld-quic.fly.dev:443/game";
   }
 
+  private getWsUrl(): string {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("ws")) return params.get("ws")!;
+    // Derive WS URL from page origin
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}/ws/game`;
+  }
+
   private async initNetwork(): Promise<void> {
-    // Show join dialog first
-    const joinDialog = new JoinDialog();
-    this.localPlayerName = await joinDialog.show();
-    console.log(`[OpenWorldScene] Player name: ${this.localPlayerName}`);
+    // Initialize chat UI (available in both online and offline modes)
+    this.chatUI = new ChatUI();
+    this.chatUI.mount();
+
+    // Initialize mini-game system
+    this.initMiniGames();
 
     const serverUrl = this.getServerUrl();
-    console.log(`[OpenWorldScene] Connecting to ${serverUrl}...`);
+    const wsUrl = this.getWsUrl();
+    console.log(`[OpenWorldScene] Connecting to ${serverUrl} (ws fallback: ${wsUrl})...`);
 
     // Certificate hashes for self-signed certs (valid 14 days max for WebTransport)
     // Regenerate with: openssl x509 -in certs/cert.pem -outform DER | openssl dgst -sha256 -binary | base64
@@ -124,6 +161,7 @@ export class OpenWorldScene {
 
     this.networkManager = new NetworkManager({
       serverUrl,
+      wsUrl,
       reconnectAttempts: 5,
       reconnectDelayMs: 2000,
       certHash: isLocalhost ? localCertHash : flyioCertHash,
@@ -131,9 +169,6 @@ export class OpenWorldScene {
 
     this.networkManager.onEvent = (event) => this.handleNetworkEvent(event);
 
-    // Initialize chat UI
-    this.chatUI = new ChatUI();
-    this.chatUI.mount();
     this.chatUI.setOnSend((message) => {
       this.networkManager?.sendChat(message);
     });
@@ -141,7 +176,153 @@ export class OpenWorldScene {
     // Connect (async, don't block init)
     this.networkManager.connect().catch((err) => {
       console.error("[OpenWorldScene] Initial connection failed:", err);
-      this.chatUI?.addSystemMessage("Connection failed - retrying...");
+      this.chatUI?.addSystemMessage("接続失敗 - リトライ中...");
+    });
+  }
+
+  private despawnCpuVisuals(): void {
+    for (const cpu of this.cpuMeshes.values()) {
+      cpu.root.dispose();
+    }
+    this.cpuMeshes.clear();
+  }
+
+  private initMiniGames(): void {
+    const callbacks: MiniGameCallbacks = {
+      getLocalPosition: () => {
+        const pos = this.player.getPosition();
+        return { x: pos.x, y: pos.y, z: pos.z };
+      },
+      getRemotePositions: () => {
+        const result = new Map<string, { x: number; y: number; z: number }>();
+        for (const [id, remote] of this.remotePlayers) {
+          const pos = remote.mesh.position;
+          result.set(id, { x: pos.x, y: pos.y, z: pos.z });
+        }
+        return result;
+      },
+      sendAction: (action: string, params: unknown) => {
+        this.networkManager?.sendAction(action, params);
+      },
+      showMessage: (msg: string) => {
+        this.chatUI?.addSystemMessage(msg);
+      },
+      getLocalPlayerId: () => {
+        return this.networkManager?.localPlayerId ?? null;
+      },
+      getPlayerName: (id: string) => {
+        return this.playerNames.get(id) ?? id.slice(0, 8);
+      },
+      spawnCpuVisuals: (cpus) => {
+        this.despawnCpuVisuals();
+        const scene = this.engine.scene;
+        const CPU_COLORS = [
+          new Color3(0.85, 0.3, 0.3),
+          new Color3(0.3, 0.75, 0.35),
+          new Color3(0.9, 0.75, 0.15),
+          new Color3(0.6, 0.3, 0.85),
+          new Color3(0.95, 0.5, 0.15),
+          new Color3(0.95, 0.4, 0.6),
+          new Color3(0.3, 0.85, 0.85),
+          new Color3(0.85, 0.85, 0.3),
+          new Color3(0.4, 0.5, 0.9),
+          new Color3(0.9, 0.55, 0.75),
+        ];
+        for (let i = 0; i < cpus.length; i++) {
+          const cpu = cpus[i];
+          const color = CPU_COLORS[i % CPU_COLORS.length];
+          const char = AssetFactory.createCharacter(scene, color);
+          char.root.position.set(cpu.x, 0, cpu.z);
+          char.root.getChildMeshes().forEach((m) => {
+            this.engine.shadowGenerator.addShadowCaster(m);
+          });
+          this.cpuMeshes.set(cpu.id, {
+            root: char.root,
+            leftShoulder: char.leftShoulder,
+            rightShoulder: char.rightShoulder,
+            leftHip: char.leftHip,
+            rightHip: char.rightHip,
+            prevX: cpu.x,
+            prevZ: cpu.z,
+            walkPhase: 0,
+          });
+        }
+      },
+      despawnCpuVisuals: () => {
+        this.despawnCpuVisuals();
+      },
+      updateCpuVisuals: (positions) => {
+        for (const [id, pos] of positions) {
+          const cpu = this.cpuMeshes.get(id);
+          if (!cpu) continue;
+
+          // Compute movement for animation
+          const dx = pos.x - cpu.prevX;
+          const dz = pos.z - cpu.prevZ;
+          const speed = Math.sqrt(dx * dx + dz * dz);
+          cpu.prevX = pos.x;
+          cpu.prevZ = pos.z;
+
+          // Smoothly interpolate position
+          cpu.root.position.x += (pos.x - cpu.root.position.x) * 0.15;
+          cpu.root.position.y += (pos.y - cpu.root.position.y) * 0.15;
+          cpu.root.position.z += (pos.z - cpu.root.position.z) * 0.15;
+
+          // Face movement direction
+          if (speed > 0.05) {
+            const targetRot = Math.atan2(dx, dz);
+            let diff = targetRot - cpu.root.rotation.y;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            cpu.root.rotation.y += diff * 0.2;
+          }
+
+          // Walk animation
+          if (speed > 0.02) {
+            cpu.walkPhase += 10 * (1 / 60); // approximate dt
+            const s = Math.sin(cpu.walkPhase);
+            cpu.leftShoulder.rotation.x = s * 0.6;
+            cpu.rightShoulder.rotation.x = -s * 0.6;
+            cpu.leftHip.rotation.x = -s * 0.5;
+            cpu.rightHip.rotation.x = s * 0.5;
+          } else {
+            cpu.leftShoulder.rotation.x *= 0.85;
+            cpu.rightShoulder.rotation.x *= 0.85;
+            cpu.leftHip.rotation.x *= 0.85;
+            cpu.rightHip.rotation.x *= 0.85;
+          }
+        }
+      },
+    };
+
+    this.miniGameManager = new MiniGameManager(callbacks);
+
+    this.gameLobbyUI = new GameLobbyUI({
+      getAvailableGames: () => this.miniGameManager!.getAvailableGames(),
+      getConnectedPlayerIds: () => {
+        const ids: string[] = [];
+        const localId = this.networkManager?.localPlayerId;
+        if (localId) ids.push(localId);
+        for (const id of this.remotePlayers.keys()) {
+          ids.push(id);
+        }
+        return ids;
+      },
+      getPlayerName: (id: string) => this.playerNames.get(id) ?? id.slice(0, 8),
+      getLocalPlayerId: () => this.networkManager?.localPlayerId ?? null,
+      onStartGame: (gameId: string, players: string[], cpuCount: number) => {
+        const hostId = this.networkManager?.localPlayerId;
+        if (!hostId) return;
+        // Broadcast to all players
+        this.networkManager?.sendAction("minigame_start", { gameId, players, hostId, cpuCount });
+        // Start locally
+        this.miniGameManager?.startGame(gameId, players, hostId, cpuCount);
+      },
+      isPlaying: () => this.miniGameManager?.isPlaying() ?? false,
+      onStopGame: () => {
+        this.networkManager?.sendAction("minigame_stop", {});
+        this.miniGameManager?.stopCurrentGame();
+      },
     });
   }
 
@@ -200,6 +381,33 @@ export class OpenWorldScene {
           this.chatUI?.addMessage(name, event.message, event.timestamp);
         }
         break;
+
+      case "action":
+        this.miniGameManager?.handleAction(event.playerId, event.action, event.params);
+        // If a game ended externally, update lobby button
+        if (event.action === "minigame_stop" && this.gameLobbyUI) {
+          this.gameLobbyUI.onGameEnded();
+        }
+        break;
+
+      case "npc_state_update":
+        this.updateNpcPositions(event.npcs);
+        break;
+    }
+  }
+
+  /** Feed server NPC positions to local animal/giant creature entities */
+  private updateNpcPositions(npcs: NpcState[]): void {
+    const animalCount = this.animals.length;
+    for (const npc of npcs) {
+      if (npc.index < animalCount) {
+        this.animals[npc.index].updateFromServer(npc.x, npc.z, npc.rotY);
+      } else {
+        const gcIndex = npc.index - animalCount;
+        if (gcIndex < this.giantCreatures.length) {
+          this.giantCreatures[gcIndex].updateFromServer(npc.x, npc.z, npc.rotY);
+        }
+      }
     }
   }
 
@@ -351,20 +559,63 @@ export class OpenWorldScene {
       { kind: "cat", x: -20, z: -14 },
       { kind: "cat", x: 5, z: 30 },
       { kind: "cat", x: -8, z: -30 },
+      // Cats in Japanese area
+      { kind: "cat", x: 270, z: 260 },
+      { kind: "cat", x: 290, z: 310 },
       // Elephants (outer areas near hills)
       { kind: "elephant", x: 55, z: 25 },
       { kind: "elephant", x: -55, z: -30 },
+      // Elephants in expanded world
+      { kind: "elephant", x: 200, z: 150 },
+      { kind: "elephant", x: -200, z: -200 },
       // Lions (roaming open areas)
       { kind: "lion", x: 35, z: 40 },
       { kind: "lion", x: -35, z: -40 },
       { kind: "lion", x: 50, z: -15 },
+      // Lions in expanded areas
+      { kind: "lion", x: 300, z: -100 },
+      { kind: "lion", x: -250, z: 150 },
+      // Forest area cats
+      { kind: "cat", x: -300, z: 280 },
+      { kind: "cat", x: -280, z: 300 },
     ];
     for (const s of spawns) {
       this.animals.push(new Animal(scene, s.kind, s.x, s.z, sg));
     }
 
-    // Spawn giant titan creature wandering the map
-    this.giantCreature = new GiantCreature(scene, -80, -80, sg);
+    // Spawn giant creatures – one per area
+    // Original titan roams near the town
+    this.giantCreatures.push(new GiantCreature(scene, -80, -80, sg));
+
+    // Japanese Dragon (龍神) roams the Japanese area
+    this.giantCreatures.push(new GiantCreature(scene, 280, 280, sg, {
+      meshFactory: AssetFactory.createDragon,
+      wanderRadius: 150,
+      moveSpeed: 4,
+      legSwing: 0.12,
+      neckBob: 0.1,
+      tailSwing: 0.15,
+    }));
+
+    // Forest Guardian (森の守護者) roams the dense forest
+    this.giantCreatures.push(new GiantCreature(scene, -300, 280, sg, {
+      meshFactory: AssetFactory.createForestGuardian,
+      wanderRadius: 120,
+      moveSpeed: 2,
+      legSwing: 0.1,
+      neckBob: 0.06,
+      tailSwing: 0.08,
+    }));
+
+    // Cave Golem (洞窟のゴーレム) roams near the cave entrance
+    this.giantCreatures.push(new GiantCreature(scene, -320, -280, sg, {
+      meshFactory: AssetFactory.createCaveGolem,
+      wanderRadius: 100,
+      moveSpeed: 1.5,
+      legSwing: 0.08,
+      neckBob: 0.04,
+      tailSwing: 0.06,
+    }));
   }
 
   /* ---- View toggle / camera transition ---- */
@@ -447,7 +698,7 @@ export class OpenWorldScene {
     this.animateDoors(dt);
     this.animateElevators(dt);
     for (const a of this.animals) a.update(dt);
-    this.giantCreature?.update(dt);
+    for (const gc of this.giantCreatures) gc.update(dt);
 
     // Player movement (pass camera alpha for third-person input rotation)
     this.player.update(dt, this.engine.viewMode, this.fpsYaw, this.engine.thirdPersonCam.alpha);
@@ -466,6 +717,15 @@ export class OpenWorldScene {
 
     // Network: send position and update remote players
     this.updateNetwork(dt);
+
+    // Mini-game update
+    if (this.miniGameManager) {
+      const wasPlaying = this.miniGameManager.isPlaying();
+      this.miniGameManager.update(dt);
+      if (wasPlaying && !this.miniGameManager.isPlaying()) {
+        this.gameLobbyUI?.onGameEnded();
+      }
+    }
 
     if (this.isTransitioning) {
       this.updateTransition(dt, pos);
@@ -720,7 +980,7 @@ export class OpenWorldScene {
       cam.alpha -= camDelta.dx * CAMERA_SENSITIVITY;
       cam.beta -= camDelta.dy * CAMERA_SENSITIVITY;
       // Clamp beta
-      cam.beta = Math.max(cam.lowerBetaLimit ?? 0.3, Math.min(cam.upperBetaLimit ?? Math.PI / 2.5, cam.beta));
+      cam.beta = Math.max(cam.lowerBetaLimit ?? 0.3, Math.min(cam.upperBetaLimit ?? Math.PI / 2, cam.beta));
     }
 
     cam.target.set(pos.x, pos.y + 1, pos.z);
@@ -734,7 +994,7 @@ export class OpenWorldScene {
       this.fpsYaw += camDelta.dx * FPS_YAW_SENSITIVITY;
       this.fpsPitch -= camDelta.dy * FPS_PITCH_SENSITIVITY;
       // Clamp pitch
-      this.fpsPitch = Math.max(-1.2, Math.min(1.2, this.fpsPitch));
+      this.fpsPitch = Math.max(-1.5, Math.min(1.5, this.fpsPitch));
     }
 
     // Position camera at player head (accounts for jump height)

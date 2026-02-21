@@ -1,16 +1,36 @@
+export interface JoinResult {
+  name: string;
+  color: { r: number; g: number; b: number };
+}
+
+const COLOR_PRESETS: { label: string; r: number; g: number; b: number }[] = [
+  { label: "青", r: 0.2, g: 0.6, b: 0.85 },
+  { label: "赤", r: 0.85, g: 0.2, b: 0.2 },
+  { label: "緑", r: 0.2, g: 0.75, b: 0.3 },
+  { label: "黄", r: 0.9, g: 0.8, b: 0.15 },
+  { label: "紫", r: 0.6, g: 0.25, b: 0.85 },
+  { label: "橙", r: 0.95, g: 0.5, b: 0.1 },
+  { label: "桃", r: 0.95, g: 0.4, b: 0.6 },
+  { label: "水", r: 0.2, g: 0.85, b: 0.85 },
+  { label: "白", r: 0.9, g: 0.9, b: 0.9 },
+  { label: "黒", r: 0.15, g: 0.15, b: 0.15 },
+];
+
 /**
- * Join dialog for entering player name before connecting
+ * Join dialog for entering player name and choosing color before connecting
  */
 export class JoinDialog {
   private container: HTMLDivElement | null = null;
   private input: HTMLInputElement | null = null;
-  private resolvePromise: ((name: string) => void) | null = null;
+  private resolvePromise: ((result: JoinResult) => void) | null = null;
+  private selectedColorIndex = 0;
+  private swatches: HTMLDivElement[] = [];
 
   /**
    * Show the dialog and wait for user input
-   * @returns Promise that resolves with the player name
+   * @returns Promise that resolves with the player name and chosen color
    */
-  show(): Promise<string> {
+  show(): Promise<JoinResult> {
     return new Promise((resolve) => {
       this.resolvePromise = resolve;
       this.mount();
@@ -18,6 +38,10 @@ export class JoinDialog {
   }
 
   private mount(): void {
+    // Restore saved color index
+    const savedIdx = parseInt(localStorage.getItem("playerColorIndex") || "0", 10);
+    this.selectedColorIndex = (savedIdx >= 0 && savedIdx < COLOR_PRESETS.length) ? savedIdx : 0;
+
     // Create overlay
     this.container = document.createElement("div");
     this.container.style.cssText = `
@@ -95,6 +119,50 @@ export class JoinDialog {
       margin-bottom: 16px;
     `;
 
+    // Color label
+    const colorLabel = document.createElement("label");
+    colorLabel.textContent = "キャラクターの色";
+    colorLabel.style.cssText = `
+      display: block;
+      color: #aaa;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-family: sans-serif;
+    `;
+
+    // Color swatches
+    const colorContainer = document.createElement("div");
+    colorContainer.style.cssText = `
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 20px;
+    `;
+
+    this.swatches = [];
+    COLOR_PRESETS.forEach((c, i) => {
+      const swatch = document.createElement("div");
+      const cssColor = `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
+      swatch.style.cssText = `
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: ${cssColor};
+        cursor: pointer;
+        border: 3px solid transparent;
+        transition: border-color 0.15s, transform 0.1s;
+        box-sizing: border-box;
+      `;
+      if (i === this.selectedColorIndex) {
+        swatch.style.borderColor = "#fff";
+        swatch.style.transform = "scale(1.15)";
+      }
+      swatch.addEventListener("click", () => this.selectColor(i));
+      colorContainer.appendChild(swatch);
+      this.swatches.push(swatch);
+    });
+
     // Join button
     const button = document.createElement("button");
     button.textContent = "Join Game";
@@ -123,8 +191,11 @@ export class JoinDialog {
     // Event handlers
     const submit = () => {
       const name = this.input?.value.trim() || "Player";
+      const color = COLOR_PRESETS[this.selectedColorIndex];
+      localStorage.setItem("playerName", name);
+      localStorage.setItem("playerColorIndex", String(this.selectedColorIndex));
       this.unmount();
-      this.resolvePromise?.(name);
+      this.resolvePromise?.({ name, color: { r: color.r, g: color.g, b: color.b } });
     };
 
     button.onclick = submit;
@@ -137,12 +208,32 @@ export class JoinDialog {
     dialog.appendChild(subtitle);
     dialog.appendChild(label);
     dialog.appendChild(this.input);
+    dialog.appendChild(colorLabel);
+    dialog.appendChild(colorContainer);
     dialog.appendChild(button);
     this.container.appendChild(dialog);
     document.body.appendChild(this.container);
 
+    // Restore saved name
+    const saved = localStorage.getItem("playerName");
+    if (saved && this.input) {
+      this.input.value = saved;
+    }
+
     // Focus input
     setTimeout(() => this.input?.focus(), 100);
+  }
+
+  private selectColor(index: number): void {
+    // Deselect old
+    if (this.swatches[this.selectedColorIndex]) {
+      this.swatches[this.selectedColorIndex].style.borderColor = "transparent";
+      this.swatches[this.selectedColorIndex].style.transform = "scale(1)";
+    }
+    // Select new
+    this.selectedColorIndex = index;
+    this.swatches[index].style.borderColor = "#fff";
+    this.swatches[index].style.transform = "scale(1.15)";
   }
 
   private unmount(): void {
@@ -150,6 +241,7 @@ export class JoinDialog {
       document.body.removeChild(this.container);
       this.container = null;
       this.input = null;
+      this.swatches = [];
     }
   }
 }

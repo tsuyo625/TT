@@ -43,10 +43,16 @@ export class Player {
   private hasDashMoved = false; // true once player actually moved while dash is on
 
   // Dash / stamina
-  dashOn = false;
+  private _dashOn = false;
   stamina = MAX_STAMINA;
   exhaustTimer = 0;              // countdown during blue phase
   staminaState: StaminaState = "normal";
+
+  get dashOn(): boolean { return this._dashOn; }
+  set dashOn(v: boolean) {
+    this._dashOn = v;
+    this.hasDashMoved = false; // reset so auto-off doesn't fire immediately
+  }
 
   // Jump / gravity
   private velocityY = 0;
@@ -122,12 +128,12 @@ export class Player {
     }
 
     // Track that we actually moved while dashing
-    if (this.dashOn && this.isMoving) {
+    if (this._dashOn && this.isMoving) {
       this.hasDashMoved = true;
     }
     // Auto-off dash only after the player has moved and then stopped
-    if (this.dashOn && !this.isMoving && this.hasDashMoved) {
-      this.dashOn = false;
+    if (this._dashOn && !this.isMoving && this.hasDashMoved) {
+      this._dashOn = false;
       this.hasDashMoved = false;
     }
 

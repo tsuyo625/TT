@@ -51,8 +51,8 @@ export class Engine {
     this.scene.ambientColor = new Color3(0.3, 0.3, 0.3);
     this.scene.fogMode = Scene.FOGMODE_LINEAR;
     this.scene.fogColor = new Color3(0.53, 0.81, 0.92);
-    this.scene.fogStart = 60;
-    this.scene.fogEnd = 150;
+    this.scene.fogStart = 200;
+    this.scene.fogEnd = 500;
     this.scene.collisionsEnabled = true;
 
     // Third-person camera (ArcRotate)
@@ -65,9 +65,9 @@ export class Engine {
       this.scene
     );
     this.thirdPersonCam.lowerBetaLimit = 0.3;
-    this.thirdPersonCam.upperBetaLimit = Math.PI / 2.5;
+    this.thirdPersonCam.upperBetaLimit = Math.PI / 2;
     this.thirdPersonCam.lowerRadiusLimit = 6;
-    this.thirdPersonCam.upperRadiusLimit = 40;
+    this.thirdPersonCam.upperRadiusLimit = 60;
     // Disable all built-in pointer inputs (we handle camera via InputManager)
     this.thirdPersonCam.inputs.clear();
 

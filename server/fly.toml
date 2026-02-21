@@ -1,0 +1,27 @@
+# Fly.io configuration for WebTransport/QUIC server
+app = "openworld-quic"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "443"
+  CERT_PATH = "/data/certs/cert.pem"
+  KEY_PATH = "/data/certs/key.pem"
+
+# Persistent storage for certificates
+[mounts]
+  source = "certs_data"
+  destination = "/data"
+
+# UDP service for QUIC/WebTransport
+[[services]]
+  internal_port = 443
+  protocol = "udp"
+  [[services.ports]]
+    port = 443
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

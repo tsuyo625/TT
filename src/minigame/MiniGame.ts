@@ -17,6 +17,9 @@ export interface MiniGameCallbacks {
   showMessage(msg: string): void;
   getLocalPlayerId(): string | null;
   getPlayerName(id: string): string;
+  spawnCpuVisuals(cpus: { id: string; x: number; z: number }[]): void;
+  despawnCpuVisuals(): void;
+  updateCpuVisuals(positions: Map<string, { x: number; y: number; z: number }>): void;
 }
 
 /** Base class for all mini-games */

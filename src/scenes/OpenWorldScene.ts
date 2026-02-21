@@ -1,6 +1,7 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Engine, ViewMode } from "../core/Engine";
 import { InputManager } from "../core/InputManager";
 import { Player } from "../entities/Player";
@@ -43,6 +44,16 @@ export class OpenWorldScene {
   // Mini-games
   private miniGameManager: MiniGameManager | null = null;
   private gameLobbyUI: GameLobbyUI | null = null;
+  private cpuMeshes: Map<string, {
+    root: TransformNode;
+    leftShoulder: TransformNode;
+    rightShoulder: TransformNode;
+    leftHip: TransformNode;
+    rightHip: TransformNode;
+    prevX: number;
+    prevZ: number;
+    walkPhase: number;
+  }> = new Map();
 
   // First-person camera state
   private fpsYaw = 0;
@@ -158,6 +169,13 @@ export class OpenWorldScene {
     });
   }
 
+  private despawnCpuVisuals(): void {
+    for (const cpu of this.cpuMeshes.values()) {
+      cpu.root.dispose();
+    }
+    this.cpuMeshes.clear();
+  }
+
   private initMiniGames(): void {
     const callbacks: MiniGameCallbacks = {
       getLocalPosition: () => {
@@ -183,6 +201,86 @@ export class OpenWorldScene {
       },
       getPlayerName: (id: string) => {
         return this.playerNames.get(id) ?? id.slice(0, 8);
+      },
+      spawnCpuVisuals: (cpus) => {
+        this.despawnCpuVisuals();
+        const scene = this.engine.scene;
+        const CPU_COLORS = [
+          new Color3(0.85, 0.3, 0.3),
+          new Color3(0.3, 0.75, 0.35),
+          new Color3(0.9, 0.75, 0.15),
+          new Color3(0.6, 0.3, 0.85),
+          new Color3(0.95, 0.5, 0.15),
+          new Color3(0.95, 0.4, 0.6),
+          new Color3(0.3, 0.85, 0.85),
+          new Color3(0.85, 0.85, 0.3),
+          new Color3(0.4, 0.5, 0.9),
+          new Color3(0.9, 0.55, 0.75),
+        ];
+        for (let i = 0; i < cpus.length; i++) {
+          const cpu = cpus[i];
+          const color = CPU_COLORS[i % CPU_COLORS.length];
+          const char = AssetFactory.createCharacter(scene, color);
+          char.root.position.set(cpu.x, 0, cpu.z);
+          char.root.getChildMeshes().forEach((m) => {
+            this.engine.shadowGenerator.addShadowCaster(m);
+          });
+          this.cpuMeshes.set(cpu.id, {
+            root: char.root,
+            leftShoulder: char.leftShoulder,
+            rightShoulder: char.rightShoulder,
+            leftHip: char.leftHip,
+            rightHip: char.rightHip,
+            prevX: cpu.x,
+            prevZ: cpu.z,
+            walkPhase: 0,
+          });
+        }
+      },
+      despawnCpuVisuals: () => {
+        this.despawnCpuVisuals();
+      },
+      updateCpuVisuals: (positions) => {
+        for (const [id, pos] of positions) {
+          const cpu = this.cpuMeshes.get(id);
+          if (!cpu) continue;
+
+          // Compute movement for animation
+          const dx = pos.x - cpu.prevX;
+          const dz = pos.z - cpu.prevZ;
+          const speed = Math.sqrt(dx * dx + dz * dz);
+          cpu.prevX = pos.x;
+          cpu.prevZ = pos.z;
+
+          // Smoothly interpolate position
+          cpu.root.position.x += (pos.x - cpu.root.position.x) * 0.15;
+          cpu.root.position.y += (pos.y - cpu.root.position.y) * 0.15;
+          cpu.root.position.z += (pos.z - cpu.root.position.z) * 0.15;
+
+          // Face movement direction
+          if (speed > 0.05) {
+            const targetRot = Math.atan2(dx, dz);
+            let diff = targetRot - cpu.root.rotation.y;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            cpu.root.rotation.y += diff * 0.2;
+          }
+
+          // Walk animation
+          if (speed > 0.02) {
+            cpu.walkPhase += 10 * (1 / 60); // approximate dt
+            const s = Math.sin(cpu.walkPhase);
+            cpu.leftShoulder.rotation.x = s * 0.6;
+            cpu.rightShoulder.rotation.x = -s * 0.6;
+            cpu.leftHip.rotation.x = -s * 0.5;
+            cpu.rightHip.rotation.x = s * 0.5;
+          } else {
+            cpu.leftShoulder.rotation.x *= 0.85;
+            cpu.rightShoulder.rotation.x *= 0.85;
+            cpu.leftHip.rotation.x *= 0.85;
+            cpu.rightHip.rotation.x *= 0.85;
+          }
+        }
       },
     };
 

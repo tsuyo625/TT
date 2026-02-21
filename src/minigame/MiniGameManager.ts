@@ -49,6 +49,15 @@ export class MiniGameManager {
     const cpuIds = this.cpuManager.spawn(cpuCount);
     const allPlayers = [...players, ...cpuIds];
 
+    // Create visual meshes for CPU players
+    if (cpuIds.length > 0) {
+      const cpuData = cpuIds.map((id) => {
+        const pos = this.cpuManager.getPosition(id)!;
+        return { id, x: pos.x, z: pos.z };
+      });
+      this.callbacks.spawnCpuVisuals(cpuData);
+    }
+
     this.currentGame = entry.factory(this.callbacks, this.cpuManager);
     this.currentGame.start(allPlayers, hostId);
     this.createOverlay();
@@ -77,12 +86,20 @@ export class MiniGameManager {
       if (this.currentGame) {
         this.removeOverlay();
         this.currentGame = null;
+        this.callbacks.despawnCpuVisuals();
         this.cpuManager.clear();
       }
       return;
     }
 
     this.currentGame.update(dt);
+
+    // Sync CPU mesh positions
+    const cpuPositions = this.cpuManager.getAllPositions();
+    if (cpuPositions.size > 0) {
+      this.callbacks.updateCpuVisuals(cpuPositions);
+    }
+
     this.updateOverlay();
   }
 
@@ -91,6 +108,7 @@ export class MiniGameManager {
       this.currentGame.stop();
       this.removeOverlay();
       this.currentGame = null;
+      this.callbacks.despawnCpuVisuals();
       this.cpuManager.clear();
     }
   }
